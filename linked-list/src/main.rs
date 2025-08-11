@@ -28,6 +28,20 @@ impl<T> LinkedList<T> {
 
         return None;
     }
+
+    pub fn reverse(&mut self) {
+        let mut prev: Option<KBox<Node<T>>> = None;
+        let mut current = self.head.take();
+
+        while let Some(mut node) = current {
+            let next = node.next.take();
+            node.next = prev;
+            prev = Some(node);
+            current = next;
+        }
+
+        self.head = prev;
+    }
 }
 
 impl<T: Debug> LinkedList<T> {
@@ -76,19 +90,22 @@ fn main() {
     println!("pushing 5");
     list.push(5);    
     println!("pushing 6");
-    list.push(6);    
+    list.push(6);
+    
+    list.debug_print_node_values();
+    list.reverse();
     list.debug_print_node_values();
 
-    println!("{}", list.pop().unwrap());
+    list.pop().unwrap();
     list.debug_print_node_values();
-    println!("{}", list.pop().unwrap());
+    list.pop().unwrap();
     list.debug_print_node_values();
-    println!("{}", list.pop().unwrap());
+    list.pop().unwrap();
     list.debug_print_node_values();
-    println!("{}", list.pop().unwrap());
+    list.pop().unwrap();
     list.debug_print_node_values();
-    println!("{}", list.pop().unwrap());
+    list.pop().unwrap();
     list.debug_print_node_values();
-    println!("{}", list.pop().unwrap());
+    list.pop().unwrap();
     list.debug_print_node_values();
 }
