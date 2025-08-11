@@ -1,91 +1,94 @@
 use std::fmt::Debug;
-use std::{ptr::NonNull};
+use kbox::KBox;
+
+mod kbox;
 
 #[derive(Debug)]
 struct LinkedList<T> {
-    head: Option<NonNull<Node<T>>> 
+    head: Option<KBox<Node<T>>>,
 }
 
-impl <T> LinkedList<T> {
+impl<T> LinkedList<T> {
     pub fn new() -> Self {
-        return Self {
-            head: None 
-        };
+        return Self { head: None };
     }
 
     pub fn push(&mut self, data: T) {
-        let new_node = Box::new(Node::new(data));
-        let node_wrapped = NonNull::new(Box::leak(new_node) as *mut Node<T>).unwrap();
+        let mut node = KBox::new(Node::new(data));
+        node.next = self.head.take();
+        self.head = Some(node);
+    }
 
-        if let Some(head) = self.head {
-            unsafe {
-                let tail_ptr = (*head.as_ptr()).tail();
-                (*tail_ptr.as_ptr()).next = Some(node_wrapped);
-            } 
-        } else {
-            self.head = Some(node_wrapped);
-        };
+    pub fn pop(&mut self) -> Option<T> {
+        if let Some(mut head) = self.head.take() {
+            let next = head.next.take();
+            self.head = next;
+            return Some(head.into_inner().data);
+        }
+
+        return None;
     }
 }
 
-impl <T: Debug> LinkedList<T> {
+impl<T: Debug> LinkedList<T> {
     pub fn debug_print_node_values(&self) {
-        let mut current_node: Option<NonNull<Node<T>>> = self.head;
+        let mut current_node: &Option<KBox<Node<T>>> = &self.head;
+        let mut node_counter = 0;
 
-        unsafe {
-            let mut node_counter = 0;
+        while let Some(node) = current_node {
+            let node_ptr = node;
 
-            while let Some(node) = current_node {
-                let node_ptr = node.as_ptr();
-                
-                if node_counter > 0 {
-                    print!(" -> ");
-                }
-                print!("{:?}", (*node_ptr).data);
-
-                current_node = (*node_ptr).next;
-                node_counter += 1;
+            if node_counter > 0 {
+                print!(" -> ");
             }
+            print!("{:?}", (*node_ptr).data);
 
-            println!();
+            current_node = &(*node_ptr).next;
+            node_counter += 1;
         }
+
+        println!();
     }
 }
 
 #[derive(Debug)]
 struct Node<T> {
     data: T,
-    next: Option<NonNull<Node<T>>>
+    next: Option<KBox<Node<T>>>,
 }
 
-impl <T> Node<T> {
+impl<T> Node<T> {
     pub fn new(data: T) -> Self {
-       return Self {
-           data,
-           next: None
-       }; 
-    }
-
-    pub fn tail(&mut self) -> NonNull<Node<T>> {
-        let mut current = self as *mut Node<T>;
-
-        unsafe {
-            while let Some(node) = (*current).next {
-                current = node.as_ptr();
-            }
-        }
-        
-        return unsafe { NonNull::new_unchecked(current) };
+        return Self { data, next: None };
     }
 }
 
 fn main() {
     let mut list: LinkedList<i32> = LinkedList::new();
+    println!("pushing 1");
     list.push(1);
-    list.push(2);
-    list.push(3);
-    list.push(4);
-    list.push(5);
-    list.push(6);
+    println!("pushing 2");
+    list.push(2);    
+    println!("pushing 3");
+    list.push(3);    
+    println!("pushing 4");
+    list.push(4);    
+    println!("pushing 5");
+    list.push(5);    
+    println!("pushing 6");
+    list.push(6);    
+    list.debug_print_node_values();
+
+    println!("{}", list.pop().unwrap());
+    list.debug_print_node_values();
+    println!("{}", list.pop().unwrap());
+    list.debug_print_node_values();
+    println!("{}", list.pop().unwrap());
+    list.debug_print_node_values();
+    println!("{}", list.pop().unwrap());
+    list.debug_print_node_values();
+    println!("{}", list.pop().unwrap());
+    list.debug_print_node_values();
+    println!("{}", list.pop().unwrap());
     list.debug_print_node_values();
 }
