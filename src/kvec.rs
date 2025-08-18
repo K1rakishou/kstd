@@ -192,6 +192,45 @@ impl<T> AsMut<[T]> for KVec<T> {
     }
 }
 
+impl<T> IntoIterator for KVec<T> {
+    type Item = T;
+    type IntoIter = KVecIterator<T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        return KVecIterator::new(self);
+    }
+}
+
+pub struct KVecIterator<T> {
+    _kvec: KVec<T>,
+    _index: usize
+}
+
+impl<T> KVecIterator<T> {
+    pub fn new(kvec: KVec<T>) -> Self {
+        return Self {
+            _kvec: kvec,
+            _index: 0
+        };
+    }
+}
+
+impl<T> Iterator for KVecIterator<T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let index = self._index;
+        if index >= self._kvec._length {
+            return None;
+        }
+        
+        let element = unsafe { self._kvec._buffer.offset(self._index as isize).read() };
+        self._index += 1;
+        
+        return Some(element);
+    }
+}
+
 mod test {
     use super::KVec;
 
@@ -249,6 +288,26 @@ mod test {
         assert_eq!(4, *iter.next().unwrap());
         assert_eq!(5, *iter.next().unwrap());
         assert_eq!(6, *iter.next().unwrap());
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn test_kvec_into_iter() {
+        let mut kvec = KVec::<usize>::new();
+        kvec.push(1);
+        kvec.push(2);
+        kvec.push(3);
+        kvec.push(4);
+        kvec.push(5);
+        kvec.push(6);
+        
+        let mut iter = kvec.into_iter();
+        assert_eq!(1, iter.next().unwrap());
+        assert_eq!(2, iter.next().unwrap());
+        assert_eq!(3, iter.next().unwrap());
+        assert_eq!(4, iter.next().unwrap());
+        assert_eq!(5, iter.next().unwrap());
+        assert_eq!(6, iter.next().unwrap());
         assert!(iter.next().is_none());
     }
 }
