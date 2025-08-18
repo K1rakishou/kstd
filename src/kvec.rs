@@ -1,4 +1,5 @@
-use std::{alloc::{alloc, dealloc, realloc, Layout}, ptr::NonNull};
+use std::{alloc::{alloc, dealloc, realloc, Layout}, ops::{Index, IndexMut}, ptr::NonNull};
+use std::fmt::Debug;
 
 pub struct KVec<T> {
     _buffer: NonNull<T>,
@@ -49,6 +50,34 @@ impl<T> KVec<T> {
         return Some(value);
     }
 
+    pub fn get(&self, index: usize) -> Option<&T> {
+        if index >= self._length {
+            return None;
+        }
+
+        let value = unsafe {
+            &*self._buffer
+                .offset(index as isize)
+                .as_ptr()
+        };
+
+        return Some(value);
+    }
+
+    pub fn get_mut(&mut self, index: usize) -> Option<&mut T> {
+        if index >= self._length {
+            return None;
+        }
+
+        let value = unsafe {
+            &mut *self._buffer
+                .offset(index as isize)
+                .as_ptr()
+        };
+
+        return Some(value);
+    }
+
     fn grow(&mut self) {
         let elem_size = std::mem::size_of::<T>();
         let elem_align = std::mem::align_of::<T>();
@@ -93,6 +122,42 @@ impl<T> KVec<T> {
     }
 }
 
+impl<T> Drop for KVec<T> {
+    fn drop(&mut self) {
+        unsafe {
+            std::ptr::drop_in_place(self._buffer.as_ptr());
+
+            let layout = Layout::new::<T>();
+            dealloc(self._buffer.as_ptr() as *mut u8, layout);
+        }
+    }
+}
+
+impl<T> Index<usize> for KVec<T> {
+    type Output = T;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        self.get(index).unwrap()
+    }
+}
+
+impl<T> IndexMut<usize> for KVec<T> {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        self.get_mut(index).unwrap()
+    }
+}
+
+impl<T> Debug for KVec<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "KVec(")?;
+        write!(f, "buffer: 0x{:p}, ", self._buffer.as_ptr())?;
+        write!(f, "capacity: {}, ", self._capacity)?;
+        write!(f, "length: {}", self._length)?;
+        write!(f, ")")?;
+        return Ok(());
+    }
+}
+
 mod test {
     use super::KVec;
 
@@ -103,6 +168,13 @@ mod test {
         for i in 0..1024 {
             kvec.push(i);
         }
+
+        for i in 0..1024 {
+            assert_eq!(i, kvec[i] as usize);
+            assert_eq!(i, *kvec.get_mut(i).unwrap() as usize);
+        }
+
+        println!("{:?}", kvec);
 
         for i in (0..1024).rev() {
             assert_eq!(i, kvec.pop().unwrap());
