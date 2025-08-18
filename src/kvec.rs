@@ -1,4 +1,4 @@
-use std::{alloc::{alloc, dealloc, realloc, Layout}, ops::{Index, IndexMut}, ptr::NonNull};
+use std::{alloc::{alloc, dealloc, realloc, Layout}, ops::{Deref, DerefMut, Index, IndexMut}, ptr::NonNull};
 use std::fmt::Debug;
 
 pub struct KVec<T> {
@@ -158,6 +158,21 @@ impl<T> Debug for KVec<T> {
     }
 }
 
+impl<T> Deref for KVec<T> {
+    type Target = [T];
+
+    fn deref(&self) -> &Self::Target {
+        return unsafe { std::slice::from_raw_parts(self._buffer.as_ptr(), self._length) };
+    }
+}
+
+impl<T> DerefMut for KVec<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        return unsafe { std::slice::from_raw_parts_mut(self._buffer.as_ptr(), self._length) };
+    }
+}
+
+
 mod test {
     use super::KVec;
 
@@ -174,13 +189,27 @@ mod test {
             assert_eq!(i, *kvec.get_mut(i).unwrap() as usize);
         }
 
-        println!("{:?}", kvec);
-
         for i in (0..1024).rev() {
             assert_eq!(i, kvec.pop().unwrap());
         }
 
         assert_eq!(None, kvec.pop());
     }
-    
+
+    #[test]
+    fn test_kvec_deref() {
+        fn accepts_slice(slice: &[usize]) {
+            println!("{:?}", slice);
+        }
+
+        fn accepts_slice_mut(slice_mut: &mut[usize]) {
+            println!("{:?}", slice_mut);
+        }
+
+        let mut kvec = KVec::<usize>::new();
+        kvec.push(11223344);
+
+        accepts_slice(&kvec);
+        accepts_slice_mut(&mut kvec);
+    }
 }
