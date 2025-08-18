@@ -78,6 +78,14 @@ impl<T> KVec<T> {
         return Some(value);
     }
 
+    pub fn iter(&self) -> std::slice::Iter<'_, T> {
+        self.as_ref().iter()
+    }
+
+    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, T> {
+        self.as_mut().iter_mut()
+    }
+
     fn grow(&mut self) {
         let elem_size = std::mem::size_of::<T>();
         let elem_align = std::mem::align_of::<T>();
@@ -172,6 +180,17 @@ impl<T> DerefMut for KVec<T> {
     }
 }
 
+impl<T> AsRef<[T]> for KVec<T> {
+    fn as_ref(&self) -> &[T] {
+        self
+    }
+}
+
+impl<T> AsMut<[T]> for KVec<T> {
+    fn as_mut(&mut self) -> &mut [T] {
+        self
+    }
+}
 
 mod test {
     use super::KVec;
@@ -211,5 +230,25 @@ mod test {
 
         accepts_slice(&kvec);
         accepts_slice_mut(&mut kvec);
+    }
+
+    #[test]
+    fn test_kvec_iter() {
+        let mut kvec = KVec::<usize>::new();
+        kvec.push(1);
+        kvec.push(2);
+        kvec.push(3);
+        kvec.push(4);
+        kvec.push(5);
+        kvec.push(6);
+
+        let mut iter = kvec.iter_mut();
+        assert_eq!(1, *iter.next().unwrap());
+        assert_eq!(2, *iter.next().unwrap());
+        assert_eq!(3, *iter.next().unwrap());
+        assert_eq!(4, *iter.next().unwrap());
+        assert_eq!(5, *iter.next().unwrap());
+        assert_eq!(6, *iter.next().unwrap());
+        assert!(iter.next().is_none());
     }
 }
