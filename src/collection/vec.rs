@@ -1,24 +1,45 @@
-use std::{alloc::{alloc, dealloc, realloc, Layout}, ops::{Deref, DerefMut, Index, IndexMut}, ptr::NonNull};
-use std::fmt::Debug;
+use core::{alloc::{self, Layout}, ops::{Deref, DerefMut, Index, IndexMut}, ptr::NonNull};
+use core::fmt::Debug;
 
-pub struct KVec<T> {
+use crate::alloc::allocator::Allocator;
+
+pub struct KVec<'a, T, A : Allocator> {
+    _allocator: &'a A,
     _buffer: NonNull<T>,
     _capacity: usize,
     _length: usize
 }
 
-impl<T> KVec<T> {
-    pub fn new() -> Self {
+impl<'a, T, A : Allocator> KVec<'a, T, A> {
+    pub fn new(allocator: &'a A) -> Self {
         return Self {
+            _allocator: allocator,
             _buffer: NonNull::dangling(),
             _capacity: 0,
             _length: 0
         }
     }
 
+    pub fn with_capacity(capacity: usize) -> Self {
+        // assert!(capacity > 0);
+
+        // let (new_buffer, new_capacity) = Self::grow(NonNull::dangling(), capacity);
+        // let this = Self {
+        //     _buffer: new_buffer,
+        //     _capacity: new_capacity,
+        //     _length: 0
+        // };
+
+        // return this;
+        todo!("Doesn't work because growing memory will access dangling memory pointer, need to fix that first")
+    }
+
     pub fn push(&mut self, value: T) {
         if self._capacity <= self._length {
-            self.grow();
+            let (new_buffer, new_capacity) = Self::grow(self._allocator, self._buffer, self._capacity);
+
+            self._buffer = new_buffer;
+            self._capacity = new_capacity;
         }
 
         let index = self._length;
@@ -40,9 +61,11 @@ impl<T> KVec<T> {
         let index = self._length - 1;
 
         let value = unsafe {
-            self._buffer
+            let element_ptr = self._buffer
                 .offset(index as isize)
-                .read()
+                .as_ptr();
+            
+            core::ptr::read(element_ptr)
         };
 
         self._length = index;
@@ -78,23 +101,40 @@ impl<T> KVec<T> {
         return Some(value);
     }
 
-    pub fn iter(&self) -> std::slice::Iter<'_, T> {
+    pub fn iter(&self) -> core::slice::Iter<'_, T> {
         self.as_ref().iter()
     }
 
-    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, T> {
+    pub fn iter_mut(&mut self) -> core::slice::IterMut<'_, T> {
         self.as_mut().iter_mut()
     }
 
-    fn grow(&mut self) {
-        let elem_size = std::mem::size_of::<T>();
-        let elem_align = std::mem::align_of::<T>();
+    pub fn len(&self) -> usize {
+        return self._length;
+    }
+
+    pub fn last_index(&self) -> Option<usize> {
+        return self._length.checked_sub(1);
+    }
+
+    pub fn last(&self) -> Option<&T> {
+        if self._length == 0 {
+            return None;
+        }
+        
+        let last_element = unsafe { self._buffer.add(self._length).as_ref() };
+        return Some(last_element);
+    }
+
+    fn grow(allocator: &'a A, buffer: NonNull<T>, capacity: usize) -> (NonNull<T>, usize) {
+        let elem_size = core::mem::size_of::<T>();
+        let elem_align = core::mem::align_of::<T>();
 
         if elem_size == 0 {
             panic!("ZSTs are not supported yet!");
         }
         
-        let new_capacity = match self._capacity {
+        let new_capacity = match capacity {
             0 => 4,
             cap => cap.checked_mul(2).expect("Capacity overflow"),
         };
@@ -104,44 +144,43 @@ impl<T> KVec<T> {
             .expect("Size overflow");
 
         let new_buffer = unsafe {
-            let ptr_raw = match self._capacity {
+            let ptr_raw = match capacity {
                 0 => {
                     let new_layout = Layout::from_size_align(new_size, elem_align).unwrap();
+                    let new_ptr = allocator.allocate(new_layout);
 
-                    alloc(new_layout) as *mut T
+                    new_ptr
                 }
                 _ => {
-                    let old_size = self._capacity
-                        .checked_mul(elem_size)
-                        .expect("Size overflow");
-                    let old_layout = Layout::from_size_align(old_size, elem_align).unwrap();
-                    
-                    let ptr = self._buffer.as_ptr() as *mut u8;
-                    realloc(ptr, old_layout, new_size) as *mut T
+                    let new_layout = Layout::from_size_align(new_size, elem_align).unwrap();
+                    let old_ptr = buffer.as_ptr() as *mut u8;
+                    let new_ptr = allocator.reallocate(old_ptr, new_layout);
+
+                    new_ptr
                 }
             };
 
-            assert_ne!(true, ptr_raw.is_null());            
-            NonNull::new_unchecked(ptr_raw)
+            let Some(ptr_raw) = ptr_raw else {
+                todo!("Try to defragment the memory in the allocator, or something");
+            };
+
+            NonNull::new_unchecked(ptr_raw as *mut T)
         };
 
-        self._buffer = new_buffer;
-        self._capacity = new_capacity;
+        return (new_buffer, new_capacity);
     }
 }
 
-impl<T> Drop for KVec<T> {
+impl<'a, T, A : Allocator> Drop for KVec<'a, T, A> {
     fn drop(&mut self) {
         unsafe {
-            std::ptr::drop_in_place(self._buffer.as_ptr());
-
-            let layout = Layout::new::<T>();
-            dealloc(self._buffer.as_ptr() as *mut u8, layout);
+            core::ptr::drop_in_place(self._buffer.as_ptr());
+            self._allocator.deallocate(self._buffer.as_ptr() as *mut u8);
         }
     }
 }
 
-impl<T> Index<usize> for KVec<T> {
+impl<'a, T, A : Allocator> Index<usize> for KVec<'a, T, A> {
     type Output = T;
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -149,14 +188,14 @@ impl<T> Index<usize> for KVec<T> {
     }
 }
 
-impl<T> IndexMut<usize> for KVec<T> {
+impl<'a, T, A : Allocator> IndexMut<usize> for KVec<'a, T, A> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         self.get_mut(index).unwrap()
     }
 }
 
-impl<T> Debug for KVec<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<'a, T, A : Allocator> Debug for KVec<'a, T, A> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "KVec(")?;
         write!(f, "buffer: 0x{:p}, ", self._buffer.as_ptr())?;
         write!(f, "capacity: {}, ", self._capacity)?;
@@ -166,48 +205,48 @@ impl<T> Debug for KVec<T> {
     }
 }
 
-impl<T> Deref for KVec<T> {
+impl<'a, T, A : Allocator> Deref for KVec<'a, T, A> {
     type Target = [T];
 
     fn deref(&self) -> &Self::Target {
-        return unsafe { std::slice::from_raw_parts(self._buffer.as_ptr(), self._length) };
+        return unsafe { core::slice::from_raw_parts(self._buffer.as_ptr(), self._length) };
     }
 }
 
-impl<T> DerefMut for KVec<T> {
+impl<'a, T, A : Allocator> DerefMut for KVec<'a, T, A> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        return unsafe { std::slice::from_raw_parts_mut(self._buffer.as_ptr(), self._length) };
+        return unsafe { core::slice::from_raw_parts_mut(self._buffer.as_ptr(), self._length) };
     }
 }
 
-impl<T> AsRef<[T]> for KVec<T> {
+impl<'a, T, A : Allocator> AsRef<[T]> for KVec<'a, T, A> {
     fn as_ref(&self) -> &[T] {
         self
     }
 }
 
-impl<T> AsMut<[T]> for KVec<T> {
+impl<'a, T, A : Allocator> AsMut<[T]> for KVec<'a, T, A> {
     fn as_mut(&mut self) -> &mut [T] {
         self
     }
 }
 
-impl<T> IntoIterator for KVec<T> {
+impl<'a, T, A : Allocator> IntoIterator for KVec<'a, T, A> {
     type Item = T;
-    type IntoIter = KVecIterator<T>;
+    type IntoIter = KVecIterator<'a, T, A>;
 
     fn into_iter(self) -> Self::IntoIter {
         return KVecIterator::new(self);
     }
 }
 
-pub struct KVecIterator<T> {
-    _kvec: KVec<T>,
+pub struct KVecIterator<'a, T, A : Allocator> {
+    _kvec: KVec<'a, T, A>,
     _index: usize
 }
 
-impl<T> KVecIterator<T> {
-    pub fn new(kvec: KVec<T>) -> Self {
+impl<'a, T, A : Allocator> KVecIterator<'a, T, A> {
+    pub fn new(kvec: KVec<'a, T, A>) -> Self {
         return Self {
             _kvec: kvec,
             _index: 0
@@ -215,7 +254,7 @@ impl<T> KVecIterator<T> {
     }
 }
 
-impl<T> Iterator for KVecIterator<T> {
+impl<'a, T, A : Allocator> Iterator for KVecIterator<'a, T, A> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -224,19 +263,27 @@ impl<T> Iterator for KVecIterator<T> {
             return None;
         }
         
-        let element = unsafe { self._kvec._buffer.offset(self._index as isize).read() };
-        self._index += 1;
+        let element = unsafe {
+            let ptr = self._kvec._buffer
+                .offset(self._index as isize)
+                .as_ptr();
+
+            core::ptr::read(ptr)
+        };
         
+        self._index += 1;
         return Some(element);
     }
 }
 
 mod test {
+    use crate::alloc::global::GlobalAllocator;
     use super::KVec;
 
     #[test]
     fn test_kvec() {
-        let mut kvec = KVec::<u64>::new();
+        let allocator = GlobalAllocator::new();
+        let mut kvec = KVec::<u64, GlobalAllocator>::new(&allocator);
 
         for i in 0..1024 {
             kvec.push(i);
@@ -256,6 +303,8 @@ mod test {
 
     #[test]
     fn test_kvec_deref() {
+        let allocator = GlobalAllocator::new();
+
         fn accepts_slice(slice: &[usize]) {
             println!("{:?}", slice);
         }
@@ -264,7 +313,7 @@ mod test {
             println!("{:?}", slice_mut);
         }
 
-        let mut kvec = KVec::<usize>::new();
+        let mut kvec = KVec::<usize, GlobalAllocator>::new(&allocator);
         kvec.push(11223344);
 
         accepts_slice(&kvec);
@@ -273,7 +322,8 @@ mod test {
 
     #[test]
     fn test_kvec_iter() {
-        let mut kvec = KVec::<usize>::new();
+        let allocator = GlobalAllocator::new();
+        let mut kvec = KVec::<usize, GlobalAllocator>::new(&allocator);
         kvec.push(1);
         kvec.push(2);
         kvec.push(3);
@@ -293,7 +343,8 @@ mod test {
 
     #[test]
     fn test_kvec_into_iter() {
-        let mut kvec = KVec::<usize>::new();
+        let allocator = GlobalAllocator::new();
+        let mut kvec = KVec::<usize, GlobalAllocator>::new(&allocator);
         kvec.push(1);
         kvec.push(2);
         kvec.push(3);
