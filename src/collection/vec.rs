@@ -20,23 +20,23 @@ impl<'a, T, A : Allocator> KVec<'a, T, A> {
         }
     }
 
-    pub fn with_capacity(capacity: usize) -> Self {
-        // assert!(capacity > 0);
+    pub fn with_capacity(allocator: &'a A, capacity: usize) -> Self {
+        assert!(capacity > 0);
+        
+        let (new_buffer, new_capacity) = Self::grow(allocator, NonNull::dangling(), capacity, 0);
+        let this = Self {
+            _allocator: allocator,
+            _buffer: new_buffer,
+            _capacity: new_capacity,
+            _length: 0
+        };
 
-        // let (new_buffer, new_capacity) = Self::grow(NonNull::dangling(), capacity);
-        // let this = Self {
-        //     _buffer: new_buffer,
-        //     _capacity: new_capacity,
-        //     _length: 0
-        // };
-
-        // return this;
-        todo!("Doesn't work because growing memory will access dangling memory pointer, need to fix that first")
+        return this;
     }
 
     pub fn push(&mut self, value: T) {
         if self._capacity <= self._length {
-            let (new_buffer, new_capacity) = Self::grow(self._allocator, self._buffer, self._capacity);
+            let (new_buffer, new_capacity) = Self::grow(self._allocator, self._buffer, self._capacity, self._length);
 
             self._buffer = new_buffer;
             self._capacity = new_capacity;
@@ -126,7 +126,7 @@ impl<'a, T, A : Allocator> KVec<'a, T, A> {
         return Some(last_element);
     }
 
-    fn grow(allocator: &'a A, buffer: NonNull<T>, capacity: usize) -> (NonNull<T>, usize) {
+    fn grow(allocator: &'a A, buffer: NonNull<T>, capacity: usize, length: usize) -> (NonNull<T>, usize) {
         let elem_size = core::mem::size_of::<T>();
         let elem_align = core::mem::align_of::<T>();
 
@@ -134,9 +134,13 @@ impl<'a, T, A : Allocator> KVec<'a, T, A> {
             panic!("ZSTs are not supported yet!");
         }
         
-        let new_capacity = match capacity {
-            0 => 4,
-            cap => cap.checked_mul(2).expect("Capacity overflow"),
+        let new_capacity = if length == 0 && capacity > 0 {
+            capacity
+        } else {
+            match capacity {
+                0 => 4,
+                cap => cap.checked_mul(2).expect("Capacity overflow"),
+            }
         };
 
         let new_size = new_capacity
@@ -144,20 +148,19 @@ impl<'a, T, A : Allocator> KVec<'a, T, A> {
             .expect("Size overflow");
 
         let new_buffer = unsafe {
-            let ptr_raw = match capacity {
-                0 => {
-                    let new_layout = Layout::from_size_align(new_size, elem_align).unwrap();
-                    let new_ptr = allocator.allocate(new_layout);
+            let ptr_raw = if length == 0 {
+                // length == 0 is the very first allocation. At this point buffer pointer is dangling so we need to allocate it.
+                let new_layout = Layout::from_size_align(new_size, elem_align).unwrap();
+                let new_ptr = allocator.allocate(new_layout);
 
-                    new_ptr
-                }
-                _ => {
-                    let new_layout = Layout::from_size_align(new_size, elem_align).unwrap();
-                    let old_ptr = buffer.as_ptr() as *mut u8;
-                    let new_ptr = allocator.reallocate(old_ptr, new_layout);
+                new_ptr
+            } else {
+                // length != 0 means that we are reallocating which means it's safe to access buffer's pointer.
+                let new_layout = Layout::from_size_align(new_size, elem_align).unwrap();
+                let old_ptr = buffer.as_ptr() as *mut u8;
+                let new_ptr = allocator.reallocate(old_ptr, new_layout);
 
-                    new_ptr
-                }
+                new_ptr
             };
 
             let Some(ptr_raw) = ptr_raw else {
@@ -360,5 +363,41 @@ mod test {
         assert_eq!(5, iter.next().unwrap());
         assert_eq!(6, iter.next().unwrap());
         assert!(iter.next().is_none());
+    }
+
+    #[test]
+    fn test_kvec_with_initial_capacity() {
+        let allocator = GlobalAllocator::new();
+
+        let mut kvec = KVec::<usize, GlobalAllocator>::with_capacity(&allocator, 4);
+        assert_eq!(4, kvec._capacity);
+        assert_eq!(0, kvec._length);
+        
+        kvec.push(1);
+        kvec.push(2);
+        kvec.push(3);
+        kvec.push(4);
+        assert_eq!(4, kvec._capacity);
+
+        kvec.push(5);
+        assert_eq!(8, kvec._capacity);
+        
+        kvec.push(6);
+        
+        let mut iter = kvec.into_iter();
+        assert_eq!(1, iter.next().unwrap());
+        assert_eq!(2, iter.next().unwrap());
+        assert_eq!(3, iter.next().unwrap());
+        assert_eq!(4, iter.next().unwrap());
+        assert_eq!(5, iter.next().unwrap());
+        assert_eq!(6, iter.next().unwrap());
+        assert!(iter.next().is_none());
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_kvec_with_0_initial_capacity_must_pacnic() {
+        let allocator = GlobalAllocator::new();
+        let _ = KVec::<usize, GlobalAllocator>::with_capacity(&allocator, 0);
     }
 }
