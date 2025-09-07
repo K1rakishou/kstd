@@ -306,11 +306,11 @@ mod test {
         let allocator = GlobalAllocator::new();
 
         fn accepts_slice(slice: &[usize]) {
-            println!("{:?}", slice);
+            let _ = slice;
         }
 
         fn accepts_slice_mut(slice_mut: &mut[usize]) {
-            println!("{:?}", slice_mut);
+            let _ = slice_mut;
         }
 
         let mut kvec = KVec::<usize, GlobalAllocator>::new(&allocator);

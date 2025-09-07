@@ -1,5 +1,8 @@
+use std::{cmp::Ordering, ops::ControlFlow};
+
 use crate::{alloc::allocator::Allocator, collection::vec::KVec};
 
+#[derive(Clone)]
 pub enum HeapType {
     Min,
     Max
@@ -91,83 +94,66 @@ impl<'a, T : PartialOrd, A : Allocator> Heap<'a, T, A> {
                 break;
             };
             
-            let left_index = self.left_child_index(anchor_index);
-            let left_element = self._elements.get(left_index);
-
-            let right_index = self.right_child_index(anchor_index);
-            let right_element = self._elements.get(right_index);
-
-            match self._type {
-                HeapType::Min => {
-                    let swap_index;
-
-                    match (left_element, right_element) {
-                        (Some(left_element), Some(right_element)) => {
-                            if left_element < right_element && current_element > left_element {
-                                swap_index = left_index;
-                            } else if right_element < left_element && current_element > right_element {
-                                swap_index = right_index;
-                            } else {
-                                break;
-                            }
-                        }
-                        (Some(left_element), None) => {
-                            if current_element > left_element {
-                                swap_index = left_index
-                            } else {
-                                break;
-                            }
-                        }
-                        (None, Some(right_element)) => {
-                            if current_element > right_element {
-                                swap_index = right_index
-                            } else {
-                                break;
-                            }
-                        }
-                        _ => break,
+            let swap_index = self.find_swap_index(current_element, anchor_index, |a, b| {
+                match self._type {
+                    HeapType::Min => {
+                        return a.partial_cmp(b).expect("Comparison failed");
                     }
-                    
-                    self._elements.swap(swap_index, anchor_index);
-                    anchor_index = swap_index;
-                }
-                HeapType::Max => {
-                    let swap_index;
-
-                    match (left_element, right_element) {
-                        (Some(left_element), Some(right_element)) => {
-                            if left_element > right_element && current_element < left_element {
-                                swap_index = left_index;
-                            } else if right_element > left_element && current_element < right_element {
-                                swap_index = right_index;
-                            } else {
-                                break;
-                            }
-                        }
-                        (Some(left_element), None) => {
-                            if current_element < left_element {
-                                swap_index = left_index
-                            } else {
-                                break;
-                            }
-                        }
-                        (None, Some(right_element)) => {
-                            if current_element < right_element {
-                                swap_index = right_index
-                            } else {
-                                break;
-                            }
-                        }
-                        _ => break,
+                    HeapType::Max => {
+                        return b.partial_cmp(a).expect("Comparison failed");
                     }
-
-                    self._elements.swap(swap_index, anchor_index);
-                    anchor_index = swap_index;
                 }
-            }
+            });
+
+            let Some(swap_index) = swap_index else {
+                break
+            };
+
+            self._elements.swap(swap_index, anchor_index);
+            anchor_index = swap_index;
         }
 
         return Some(return_element);
+    }
+
+    fn find_swap_index<F : Fn(&T, &T) -> Ordering>(
+        &self,
+        current_element: &T,
+        anchor_index: usize,
+        cmp_func: F
+    ) -> Option<usize> {
+        let mut swap_index: Option<usize> = None;
+
+        let left_index = self.left_child_index(anchor_index);
+        let left_element = self._elements.get(left_index);
+
+        let right_index = self.right_child_index(anchor_index);
+        let right_element = self._elements.get(right_index);
+        
+        match (left_element, right_element) {
+            (Some(left_element), Some(right_element)) => {
+                if cmp_func(left_element, right_element).is_le() && cmp_func(current_element, left_element).is_gt() {
+                    swap_index = Some(left_index);
+                } else if cmp_func(right_element, left_element).is_le() && cmp_func(current_element, right_element).is_gt() {
+                    swap_index = Some(right_index);
+                }
+            }
+            (Some(left_element), None) => {
+                if cmp_func(current_element, left_element).is_gt() {
+                    swap_index = Some(left_index);
+                }
+            }
+            (None, Some(right_element)) => {
+                if cmp_func(current_element, right_element).is_gt() {
+                    swap_index = Some(right_index);
+                }
+            }
+            _ => {
+                // no-op
+            }
+        }
+
+        return swap_index;
     }
 
     fn left_child_index(&self, anchor: usize) -> usize {
@@ -196,22 +182,54 @@ mod tests {
     use std::fmt::Debug;
 
     #[test]
-    fn simple_test() {
+    fn test_min_heap() {
         let allocator = GlobalAllocator::new();
         let mut heap = Heap::<usize, GlobalAllocator>::min(&allocator);
         heap.push(9);
+        heap.push(7);
         heap.push(8);
         heap.push(3);
         heap.push(5);
+        heap.push(5);
         heap.push(1);
-        heap.push(7);
+        heap.push(3);
+        heap.push(1);
 
         assert_eq!(1, heap.pop().unwrap());
+        assert_eq!(1, heap.pop().unwrap());
         assert_eq!(3, heap.pop().unwrap());
+        assert_eq!(3, heap.pop().unwrap());
+        assert_eq!(5, heap.pop().unwrap());
         assert_eq!(5, heap.pop().unwrap());
         assert_eq!(7, heap.pop().unwrap());
         assert_eq!(8, heap.pop().unwrap());
         assert_eq!(9, heap.pop().unwrap());
+        assert!(heap.pop().is_none());
+    }
+
+    #[test]
+    fn test_max_heap() {
+        let allocator = GlobalAllocator::new();
+        let mut heap = Heap::<usize, GlobalAllocator>::max(&allocator);
+        heap.push(9);
+        heap.push(7);
+        heap.push(8);
+        heap.push(3);
+        heap.push(5);
+        heap.push(5);
+        heap.push(1);
+        heap.push(3);
+        heap.push(1);
+
+        assert_eq!(9, heap.pop().unwrap());
+        assert_eq!(8, heap.pop().unwrap());
+        assert_eq!(7, heap.pop().unwrap());
+        assert_eq!(5, heap.pop().unwrap());
+        assert_eq!(5, heap.pop().unwrap());
+        assert_eq!(3, heap.pop().unwrap());
+        assert_eq!(3, heap.pop().unwrap());
+        assert_eq!(1, heap.pop().unwrap());
+        assert_eq!(1, heap.pop().unwrap());
         assert!(heap.pop().is_none());
     }
 
