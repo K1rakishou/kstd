@@ -1,7 +1,8 @@
 use core::alloc::Layout;
 
-use crate::alloc::{allocator::Allocator, platform};
+use crate::alloc::{kallocator::Allocator, platform};
 
+#[derive(Debug)]
 pub struct GlobalAllocator {
     
 }

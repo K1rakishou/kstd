@@ -1,4 +1,4 @@
-use crate::{alloc::allocator::Allocator, collection::boxed::KBox};
+use crate::alloc::{kallocator::Allocator, kbox::KBox};
 
 struct LinkedList<'a, T, A : Allocator> {
     _allocator: &'a A,
@@ -56,8 +56,7 @@ impl<'a, T, A : Allocator> Node<'a, T, A> {
 }
 
 mod test {
-    use crate::{alloc::{allocator::Allocator, global::GlobalAllocator}, collection::{boxed::KBox, linked_list::{LinkedList, Node}}};
-    use std::fmt::Debug;
+    use crate::{alloc::{global::GlobalAllocator}, collection::{klinked_list::{LinkedList}}};
     
     #[test]
     fn test_linked_list() {

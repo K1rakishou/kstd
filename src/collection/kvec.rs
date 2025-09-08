@@ -1,7 +1,8 @@
-use core::{alloc::{self, Layout}, ops::{Deref, DerefMut, Index, IndexMut}, ptr::NonNull};
+use core::{alloc::{Layout}, ops::{Deref, DerefMut, Index, IndexMut}, ptr::NonNull};
 use core::fmt::Debug;
+use std::cmp::Ordering;
 
-use crate::alloc::allocator::Allocator;
+use crate::alloc::kallocator::Allocator;
 
 pub struct KVec<'a, T, A : Allocator> {
     _allocator: &'a A,
@@ -21,9 +22,7 @@ impl<'a, T, A : Allocator> KVec<'a, T, A> {
     }
 
     pub fn with_capacity(allocator: &'a A, capacity: usize) -> Self {
-        assert!(capacity > 0);
-        
-        let (new_buffer, new_capacity) = Self::grow(allocator, NonNull::dangling(), capacity, 0);
+        let (new_buffer, new_capacity) = Self::grow(allocator, NonNull::dangling(), capacity, true);
         let this = Self {
             _allocator: allocator,
             _buffer: new_buffer,
@@ -34,9 +33,23 @@ impl<'a, T, A : Allocator> KVec<'a, T, A> {
         return this;
     }
 
+    pub fn from_slice(allocator: &'a A, slice: &[T]) -> Self {
+        let (new_buffer, new_capacity) = Self::grow(allocator, NonNull::dangling(), slice.len(), true);
+        let mut this = Self {
+            _allocator: allocator,
+            _buffer: new_buffer,
+            _capacity: new_capacity,
+            _length: 0
+        };
+
+        this.extend_from_slice(slice);
+
+        return this;
+    }
+
     pub fn push(&mut self, value: T) {
         if self._capacity <= self._length {
-            let (new_buffer, new_capacity) = Self::grow(self._allocator, self._buffer, self._capacity, self._length);
+            let (new_buffer, new_capacity) = Self::grow(self._allocator, self._buffer, self._capacity, self.is_empty());
 
             self._buffer = new_buffer;
             self._capacity = new_capacity;
@@ -54,7 +67,7 @@ impl<'a, T, A : Allocator> KVec<'a, T, A> {
     }
 
     pub fn pop(&mut self) -> Option<T> {
-        if self._length == 0 {
+        if self.is_empty() {
             return None;
         }
         
@@ -118,7 +131,7 @@ impl<'a, T, A : Allocator> KVec<'a, T, A> {
     }
 
     pub fn last(&self) -> Option<&T> {
-        if self._length == 0 {
+        if self.is_empty() {
             return None;
         }
         
@@ -126,7 +139,31 @@ impl<'a, T, A : Allocator> KVec<'a, T, A> {
         return Some(last_element);
     }
 
-    fn grow(allocator: &'a A, buffer: NonNull<T>, capacity: usize, length: usize) -> (NonNull<T>, usize) {
+    pub fn extend_from_slice(&mut self, slice: &[T]) {
+        let slice_len = slice.len();
+        let available_len = self._length as isize - self._capacity as isize;
+
+        if available_len < slice_len as isize {
+            let (new_buffer, new_capacity) = Self::grow(self._allocator, self._buffer, self._capacity + slice_len, self.is_empty());
+            self._buffer = new_buffer;
+            self._capacity = new_capacity;
+        }
+
+        unsafe {
+            let src_ptr = slice.as_ptr();
+            let dst_ptr = self._buffer.add(self._length).as_ptr();
+
+            core::ptr::copy_nonoverlapping(src_ptr, dst_ptr, slice_len);
+
+            self._length += slice_len;
+        };
+    }
+
+    pub fn is_empty(&self) -> bool {
+        return self._length == 0;
+    }
+
+    fn grow(allocator: &'a A, buffer: NonNull<T>, capacity: usize, is_buffer_empty: bool) -> (NonNull<T>, usize) {
         let elem_size = core::mem::size_of::<T>();
         let elem_align = core::mem::align_of::<T>();
 
@@ -134,12 +171,18 @@ impl<'a, T, A : Allocator> KVec<'a, T, A> {
             panic!("ZSTs are not supported yet!");
         }
         
-        let new_capacity = if length == 0 && capacity > 0 {
+        let new_capacity = if is_buffer_empty && capacity > 0 {
             capacity
         } else {
             match capacity {
                 0 => 4,
-                cap => cap.checked_mul(2).expect("Capacity overflow"),
+                cap => {
+                    if cap == usize::MAX {
+                        panic!("Capacity overflow");
+                    }
+
+                    cap.saturating_mul(2)
+                },
             }
         };
 
@@ -148,7 +191,7 @@ impl<'a, T, A : Allocator> KVec<'a, T, A> {
             .expect("Size overflow");
 
         let new_buffer = unsafe {
-            let ptr_raw = if length == 0 {
+            let ptr_raw = if is_buffer_empty {
                 // length == 0 is the very first allocation. At this point buffer pointer is dangling so we need to allocate it.
                 let new_layout = Layout::from_size_align(new_size, elem_align).unwrap();
                 let new_ptr = allocator.allocate(new_layout);
@@ -279,6 +322,57 @@ impl<'a, T, A : Allocator> Iterator for KVecIterator<'a, T, A> {
     }
 }
 
+impl<'a, T : PartialEq, A : Allocator> PartialEq for KVec<'a, T, A> {
+    fn eq(&self, other: &Self) -> bool {
+        if !self.len().eq(&other.len()) {
+            return false;
+        }
+
+        let length = self.len();
+
+        for idx in 0 .. length {
+            let elem1 = self.index(idx);
+            let elem2 = other.index(idx);
+
+            if !elem1.eq(elem2) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+}
+
+impl<'a, T : PartialOrd, A : Allocator> PartialOrd for KVec<'a, T, A> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        let Some(length_cmp) = self.len().partial_cmp(&other.len()) else {
+            return None;
+        };
+        
+        if length_cmp != Ordering::Equal {
+            return Some(length_cmp);
+        }
+
+        let length = self.len();
+
+        for idx in 0 .. length {
+            let elem1 = self.index(idx);
+            let elem2 = other.index(idx);
+
+            let Some(elem_cmp) = elem1.partial_cmp(&elem2) else {
+                return None;
+            };
+        
+            if elem_cmp != Ordering::Equal {
+                return Some(elem_cmp);
+            }
+        }
+
+        return Some(Ordering::Equal);
+    }
+}
+
+
 mod test {
     use crate::alloc::global::GlobalAllocator;
     use super::KVec;
@@ -395,9 +489,33 @@ mod test {
     }
 
     #[test]
-    #[should_panic]
-    fn test_kvec_with_0_initial_capacity_must_pacnic() {
+    fn test_kvec_with_0_initial_capacity() {
         let allocator = GlobalAllocator::new();
-        let _ = KVec::<usize, GlobalAllocator>::with_capacity(&allocator, 0);
+        let mut kvec = KVec::<usize, GlobalAllocator>::with_capacity(&allocator, 0);
+
+        kvec.push(1);
+        kvec.push(1);
+        kvec.push(1);
+        kvec.push(1);
+        kvec.push(1);
+
+        assert_eq!(1, kvec.pop().unwrap());
+        assert_eq!(1, kvec.pop().unwrap());
+        assert_eq!(1, kvec.pop().unwrap());
+        assert_eq!(1, kvec.pop().unwrap());
+        assert_eq!(1, kvec.pop().unwrap());
+    }
+
+    #[test]
+    fn test_kvec_extend_from_slice() {
+        let allocator = GlobalAllocator::new();
+        let mut kvec = KVec::<usize, GlobalAllocator>::with_capacity(&allocator, 0);
+
+        kvec.extend_from_slice(&[1, 2, 3, 4, 5]);
+        kvec.extend_from_slice(&[6, 7, 8, 9, 10]);
+        kvec.extend_from_slice(&[11, 12, 13, 14, 15]);
+
+        let total_kvec = KVec::from_slice(&allocator, &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
+        assert_eq!(total_kvec, kvec);
     }
 }

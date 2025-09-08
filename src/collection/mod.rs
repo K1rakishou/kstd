@@ -1,4 +1,3 @@
-pub mod boxed;
-pub mod vec;
-pub mod heap;
-pub mod linked_list;
+pub mod kvec;
+pub mod kheap;
+pub mod klinked_list;

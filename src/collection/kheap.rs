@@ -1,6 +1,6 @@
 use std::{cmp::Ordering, ops::ControlFlow};
 
-use crate::{alloc::allocator::Allocator, collection::vec::KVec};
+use crate::{alloc::kallocator::Allocator, collection::kvec::KVec};
 
 #[derive(Clone)]
 pub enum HeapType {
@@ -177,7 +177,7 @@ impl<'a, T : PartialOrd, A : Allocator> Heap<'a, T, A> {
 }
 
 mod tests {
-    use crate::alloc::{allocator::Allocator, global::GlobalAllocator};
+    use crate::alloc::{kallocator::Allocator, global::GlobalAllocator};
     use super::Heap;
     use std::fmt::Debug;
 

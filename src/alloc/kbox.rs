@@ -1,6 +1,6 @@
 use core::{alloc::Layout, any::type_name, ops::{Deref, DerefMut}, ptr::NonNull};
 
-use crate::alloc::allocator::Allocator;
+use crate::alloc::kallocator::Allocator;
 
 pub struct KBox<'a, T, A : Allocator> {
     _allocator: &'a A,
