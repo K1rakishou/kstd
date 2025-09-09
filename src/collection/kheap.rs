@@ -1,6 +1,6 @@
 use std::{cmp::Ordering, ops::ControlFlow};
 
-use crate::{alloc::kallocator::Allocator, collection::kvec::KVec};
+use crate::{alloc::kallocator::KAllocator, collection::kvec::KVec};
 
 #[derive(Clone)]
 pub enum HeapType {
@@ -8,13 +8,13 @@ pub enum HeapType {
     Max
 }
 
-pub struct Heap<'a, T : PartialOrd, A : Allocator> {
+pub struct Heap<'a, T : PartialOrd, A : KAllocator> {
     _allocator: &'a A,
     _elements: KVec<'a, T, A>,
     _type: HeapType
 }
 
-impl<'a, T : PartialOrd, A : Allocator> Heap<'a, T, A> {
+impl<'a, T : PartialOrd, A : KAllocator> Heap<'a, T, A> {
     pub fn min(allocator: &'a A) -> Self {
         return Self::new(allocator, HeapType::Min);
     }
@@ -177,7 +177,7 @@ impl<'a, T : PartialOrd, A : Allocator> Heap<'a, T, A> {
 }
 
 mod tests {
-    use crate::alloc::{kallocator::Allocator, global::GlobalAllocator};
+    use crate::alloc::{kallocator::KAllocator, global::GlobalAllocator};
     use super::Heap;
     use std::fmt::Debug;
 
@@ -233,7 +233,7 @@ mod tests {
         assert!(heap.pop().is_none());
     }
 
-    impl<'a, T : PartialOrd + Debug, A : Allocator> Heap<'a, T, A> {
+    impl<'a, T : PartialOrd + Debug, A : KAllocator> Heap<'a, T, A> {
         fn print_heap(&self) {
             for (index, element) in self._elements.iter().enumerate() {
                 if index > 0 {

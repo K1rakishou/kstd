@@ -1,11 +1,11 @@
-use crate::alloc::{kallocator::Allocator, kbox::KBox};
+use crate::alloc::{kallocator::KAllocator, kbox::KBox};
 
-struct LinkedList<'a, T, A : Allocator> {
+struct LinkedList<'a, T, A : KAllocator> {
     _allocator: &'a A,
     head: Option<KBox<'a, Node<'a, T, A>, A>>,
 }
 
-impl<'a, T, A : Allocator> LinkedList<'a, T, A> {
+impl<'a, T, A : KAllocator> LinkedList<'a, T, A> {
     pub fn new(allocator: &'a A) -> Self {
         return Self {
              _allocator: allocator,
@@ -44,12 +44,12 @@ impl<'a, T, A : Allocator> LinkedList<'a, T, A> {
     }
 }
 
-struct Node<'a, T, A : Allocator> {
+struct Node<'a, T, A : KAllocator> {
     data: T,
     next: Option<KBox<'a, Node<'a, T, A>, A>>,
 }
 
-impl<'a, T, A : Allocator> Node<'a, T, A> {
+impl<'a, T, A : KAllocator> Node<'a, T, A> {
     pub fn new(data: T) -> Self {
         return Self { data, next: None };
     }

@@ -1,17 +1,17 @@
-use core::{alloc::{Layout}, ops::{Deref, DerefMut, Index, IndexMut}, ptr::NonNull};
+use core::{alloc::Layout, ops::{Deref, DerefMut, Index, IndexMut}, ptr::NonNull, slice};
 use core::fmt::Debug;
 use std::cmp::Ordering;
 
-use crate::alloc::kallocator::Allocator;
+use crate::alloc::kallocator::KAllocator;
 
-pub struct KVec<'a, T, A : Allocator> {
+pub struct KVec<'a, T, A : KAllocator> {
     _allocator: &'a A,
     _buffer: NonNull<T>,
     _capacity: usize,
     _length: usize
 }
 
-impl<'a, T, A : Allocator> KVec<'a, T, A> {
+impl<'a, T, A : KAllocator> KVec<'a, T, A> {
     pub fn new(allocator: &'a A) -> Self {
         return Self {
             _allocator: allocator,
@@ -86,6 +86,7 @@ impl<'a, T, A : Allocator> KVec<'a, T, A> {
         return Some(value);
     }
 
+    #[inline]
     pub fn get(&self, index: usize) -> Option<&T> {
         if index >= self._length {
             return None;
@@ -100,6 +101,7 @@ impl<'a, T, A : Allocator> KVec<'a, T, A> {
         return Some(value);
     }
 
+    #[inline]
     pub fn get_mut(&mut self, index: usize) -> Option<&mut T> {
         if index >= self._length {
             return None;
@@ -114,22 +116,27 @@ impl<'a, T, A : Allocator> KVec<'a, T, A> {
         return Some(value);
     }
 
+    #[inline]
     pub fn iter(&self) -> core::slice::Iter<'_, T> {
         self.as_ref().iter()
     }
 
+    #[inline]
     pub fn iter_mut(&mut self) -> core::slice::IterMut<'_, T> {
         self.as_mut().iter_mut()
     }
 
+    #[inline]
     pub fn len(&self) -> usize {
         return self._length;
     }
 
+    #[inline]
     pub fn last_index(&self) -> Option<usize> {
         return self._length.checked_sub(1);
     }
 
+    #[inline]
     pub fn last(&self) -> Option<&T> {
         if self.is_empty() {
             return None;
@@ -159,8 +166,19 @@ impl<'a, T, A : Allocator> KVec<'a, T, A> {
         };
     }
 
+    #[inline]
     pub fn is_empty(&self) -> bool {
         return self._length == 0;
+    }
+
+    #[inline]
+    pub const fn as_slice(&self) -> &[T] {
+        return unsafe { slice::from_raw_parts(self.as_ptr(), self._length) };
+    }
+
+    #[inline]
+    pub const fn as_ptr(&self) -> *const T {
+        return self._buffer.as_ptr() as *const T;
     }
 
     fn grow(allocator: &'a A, buffer: NonNull<T>, capacity: usize, is_buffer_empty: bool) -> (NonNull<T>, usize) {
@@ -217,7 +235,7 @@ impl<'a, T, A : Allocator> KVec<'a, T, A> {
     }
 }
 
-impl<'a, T, A : Allocator> Drop for KVec<'a, T, A> {
+impl<'a, T, A : KAllocator> Drop for KVec<'a, T, A> {
     fn drop(&mut self) {
         unsafe {
             core::ptr::drop_in_place(self._buffer.as_ptr());
@@ -226,7 +244,7 @@ impl<'a, T, A : Allocator> Drop for KVec<'a, T, A> {
     }
 }
 
-impl<'a, T, A : Allocator> Index<usize> for KVec<'a, T, A> {
+impl<'a, T, A : KAllocator> Index<usize> for KVec<'a, T, A> {
     type Output = T;
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -234,13 +252,13 @@ impl<'a, T, A : Allocator> Index<usize> for KVec<'a, T, A> {
     }
 }
 
-impl<'a, T, A : Allocator> IndexMut<usize> for KVec<'a, T, A> {
+impl<'a, T, A : KAllocator> IndexMut<usize> for KVec<'a, T, A> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         self.get_mut(index).unwrap()
     }
 }
 
-impl<'a, T, A : Allocator> Debug for KVec<'a, T, A> {
+impl<'a, T, A : KAllocator> Debug for KVec<'a, T, A> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "KVec(")?;
         write!(f, "buffer: 0x{:p}, ", self._buffer.as_ptr())?;
@@ -251,7 +269,7 @@ impl<'a, T, A : Allocator> Debug for KVec<'a, T, A> {
     }
 }
 
-impl<'a, T, A : Allocator> Deref for KVec<'a, T, A> {
+impl<'a, T, A : KAllocator> Deref for KVec<'a, T, A> {
     type Target = [T];
 
     fn deref(&self) -> &Self::Target {
@@ -259,25 +277,25 @@ impl<'a, T, A : Allocator> Deref for KVec<'a, T, A> {
     }
 }
 
-impl<'a, T, A : Allocator> DerefMut for KVec<'a, T, A> {
+impl<'a, T, A : KAllocator> DerefMut for KVec<'a, T, A> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         return unsafe { core::slice::from_raw_parts_mut(self._buffer.as_ptr(), self._length) };
     }
 }
 
-impl<'a, T, A : Allocator> AsRef<[T]> for KVec<'a, T, A> {
+impl<'a, T, A : KAllocator> AsRef<[T]> for KVec<'a, T, A> {
     fn as_ref(&self) -> &[T] {
         self
     }
 }
 
-impl<'a, T, A : Allocator> AsMut<[T]> for KVec<'a, T, A> {
+impl<'a, T, A : KAllocator> AsMut<[T]> for KVec<'a, T, A> {
     fn as_mut(&mut self) -> &mut [T] {
         self
     }
 }
 
-impl<'a, T, A : Allocator> IntoIterator for KVec<'a, T, A> {
+impl<'a, T, A : KAllocator> IntoIterator for KVec<'a, T, A> {
     type Item = T;
     type IntoIter = KVecIterator<'a, T, A>;
 
@@ -286,12 +304,12 @@ impl<'a, T, A : Allocator> IntoIterator for KVec<'a, T, A> {
     }
 }
 
-pub struct KVecIterator<'a, T, A : Allocator> {
+pub struct KVecIterator<'a, T, A : KAllocator> {
     _kvec: KVec<'a, T, A>,
     _index: usize
 }
 
-impl<'a, T, A : Allocator> KVecIterator<'a, T, A> {
+impl<'a, T, A : KAllocator> KVecIterator<'a, T, A> {
     pub fn new(kvec: KVec<'a, T, A>) -> Self {
         return Self {
             _kvec: kvec,
@@ -300,7 +318,7 @@ impl<'a, T, A : Allocator> KVecIterator<'a, T, A> {
     }
 }
 
-impl<'a, T, A : Allocator> Iterator for KVecIterator<'a, T, A> {
+impl<'a, T, A : KAllocator> Iterator for KVecIterator<'a, T, A> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -322,7 +340,7 @@ impl<'a, T, A : Allocator> Iterator for KVecIterator<'a, T, A> {
     }
 }
 
-impl<'a, T : PartialEq, A : Allocator> PartialEq for KVec<'a, T, A> {
+impl<'a, T : PartialEq, A : KAllocator> PartialEq for KVec<'a, T, A> {
     fn eq(&self, other: &Self) -> bool {
         if !self.len().eq(&other.len()) {
             return false;
@@ -343,7 +361,7 @@ impl<'a, T : PartialEq, A : Allocator> PartialEq for KVec<'a, T, A> {
     }
 }
 
-impl<'a, T : PartialOrd, A : Allocator> PartialOrd for KVec<'a, T, A> {
+impl<'a, T : PartialOrd, A : KAllocator> PartialOrd for KVec<'a, T, A> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         let Some(length_cmp) = self.len().partial_cmp(&other.len()) else {
             return None;

@@ -1,13 +1,13 @@
 use core::{alloc::Layout, any::type_name, ops::{Deref, DerefMut}, ptr::NonNull};
 
-use crate::alloc::kallocator::Allocator;
+use crate::alloc::kallocator::KAllocator;
 
-pub struct KBox<'a, T, A : Allocator> {
+pub struct KBox<'a, T, A : KAllocator> {
     _allocator: &'a A,
     ptr: NonNull<T>
 }
 
-impl<'a, T, A : Allocator> KBox<'a, T, A> {
+impl<'a, T, A : KAllocator> KBox<'a, T, A> {
     pub fn new(allocator: &'a A, value: T) -> Self {
         unsafe {
             let layout = Layout::new::<T>();
@@ -38,7 +38,7 @@ impl<'a, T, A : Allocator> KBox<'a, T, A> {
     }
 }
 
-impl<'a, T, A : Allocator> Drop for KBox<'a, T, A> {
+impl<'a, T, A : KAllocator> Drop for KBox<'a, T, A> {
     fn drop(&mut self) {
         unsafe {
             core::ptr::drop_in_place(self.as_ptr());
@@ -47,7 +47,7 @@ impl<'a, T, A : Allocator> Drop for KBox<'a, T, A> {
     }
 }
 
-impl<'a, T, A : Allocator> Deref for KBox<'a, T, A> {
+impl<'a, T, A : KAllocator> Deref for KBox<'a, T, A> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -55,7 +55,7 @@ impl<'a, T, A : Allocator> Deref for KBox<'a, T, A> {
     }
 }
 
-impl<'a, T, A : Allocator> DerefMut for KBox<'a, T, A> {
+impl<'a, T, A : KAllocator> DerefMut for KBox<'a, T, A> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.as_ptr() }
     }

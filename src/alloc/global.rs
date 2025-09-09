@@ -1,6 +1,6 @@
 use core::alloc::Layout;
 
-use crate::alloc::{kallocator::Allocator, platform};
+use crate::alloc::{kallocator::KAllocator, platform};
 
 #[derive(Debug)]
 pub struct GlobalAllocator {
@@ -15,7 +15,7 @@ impl GlobalAllocator {
     }
 }
 
-impl Allocator for GlobalAllocator {
+impl KAllocator for GlobalAllocator {
     fn allocate(&self, layout: Layout) -> Option<*mut u8> {
         let raw_ptr = if cfg!(unix) {
             platform::linux::allocate(layout)
