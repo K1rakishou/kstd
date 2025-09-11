@@ -97,6 +97,8 @@ impl<'a, A : KAllocator> core::fmt::Write for KString<'a, A> {
     }
 }
 
+// TODO: impl Deref, DerefMut, AsRef<str>
+
 mod test {
     use crate::alloc::{global::GlobalAllocator, kstring::KString};
 

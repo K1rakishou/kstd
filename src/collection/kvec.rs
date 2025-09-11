@@ -2,7 +2,7 @@ use core::{alloc::Layout, ops::{Deref, DerefMut, Index, IndexMut}, ptr::NonNull,
 use core::fmt::Debug;
 use std::cmp::Ordering;
 
-use crate::alloc::kallocator::KAllocator;
+use crate::{alloc::kallocator::KAllocator, collection::layout_from_capacity};
 
 pub struct KVec<'a, T, A : KAllocator> {
     _allocator: &'a A,
@@ -22,7 +22,7 @@ impl<'a, T, A : KAllocator> KVec<'a, T, A> {
     }
 
     pub fn with_capacity(allocator: &'a A, capacity: usize) -> Self {
-        let (new_buffer, new_capacity) = Self::grow(allocator, NonNull::dangling(), capacity, true);
+        let (new_buffer, new_capacity) = Self::grow(allocator, NonNull::dangling(), capacity, 0, 0);
         let this = Self {
             _allocator: allocator,
             _buffer: new_buffer,
@@ -34,7 +34,7 @@ impl<'a, T, A : KAllocator> KVec<'a, T, A> {
     }
 
     pub fn from_slice(allocator: &'a A, slice: &[T]) -> Self {
-        let (new_buffer, new_capacity) = Self::grow(allocator, NonNull::dangling(), slice.len(), true);
+        let (new_buffer, new_capacity) = Self::grow(allocator, NonNull::dangling(), slice.len(), 0, 0);
         let mut this = Self {
             _allocator: allocator,
             _buffer: new_buffer,
@@ -49,7 +49,7 @@ impl<'a, T, A : KAllocator> KVec<'a, T, A> {
 
     pub fn push(&mut self, value: T) {
         if self._capacity <= self._length {
-            let (new_buffer, new_capacity) = Self::grow(self._allocator, self._buffer, self._capacity, self.is_empty());
+            let (new_buffer, new_capacity) = Self::grow(self._allocator, self._buffer, self._capacity, 0, self._length);
 
             self._buffer = new_buffer;
             self._capacity = new_capacity;
@@ -132,6 +132,11 @@ impl<'a, T, A : KAllocator> KVec<'a, T, A> {
     }
 
     #[inline]
+    pub fn cap(&self) -> usize {
+        return self._capacity;
+    }
+
+    #[inline]
     pub fn last_index(&self) -> Option<usize> {
         return self._length.checked_sub(1);
     }
@@ -146,12 +151,24 @@ impl<'a, T, A : KAllocator> KVec<'a, T, A> {
         return Some(last_element);
     }
 
+    pub fn reserve(&mut self, additional: usize) {
+        let Some(free_space_length) = self._capacity.checked_sub(self._length) else {
+            panic!("Subtraction overflow!");
+        };
+            
+        if additional > free_space_length {
+            let (new_buffer, new_capacity) = Self::grow(self._allocator, self._buffer, self._capacity, additional, self._length);
+            self._buffer = new_buffer;
+            self._capacity = new_capacity;
+        }
+    }
+
     pub fn extend_from_slice(&mut self, slice: &[T]) {
         let slice_len = slice.len();
-        let available_len = self._length as isize - self._capacity as isize;
+        let available_len = self._capacity as isize - self._length as isize;
 
         if available_len < slice_len as isize {
-            let (new_buffer, new_capacity) = Self::grow(self._allocator, self._buffer, self._capacity + slice_len, self.is_empty());
+            let (new_buffer, new_capacity) = Self::grow(self._allocator, self._buffer, self._capacity, slice_len, self._length);
             self._buffer = new_buffer;
             self._capacity = new_capacity;
         }
@@ -159,7 +176,6 @@ impl<'a, T, A : KAllocator> KVec<'a, T, A> {
         unsafe {
             let src_ptr = slice.as_ptr();
             let dst_ptr = self._buffer.add(self._length).as_ptr();
-
             core::ptr::copy_nonoverlapping(src_ptr, dst_ptr, slice_len);
 
             self._length += slice_len;
@@ -181,18 +197,20 @@ impl<'a, T, A : KAllocator> KVec<'a, T, A> {
         return self._buffer.as_ptr() as *const T;
     }
 
-    fn grow(allocator: &'a A, buffer: NonNull<T>, capacity: usize, is_buffer_empty: bool) -> (NonNull<T>, usize) {
+    fn grow(allocator: &'a A, buffer: NonNull<T>, old_capacity: usize, additional: usize, length: usize) -> (NonNull<T>, usize) {
         let elem_size = core::mem::size_of::<T>();
         let elem_align = core::mem::align_of::<T>();
 
         if elem_size == 0 {
             panic!("ZSTs are not supported yet!");
         }
+
+        let total_capacity = old_capacity + additional;
         
-        let new_capacity = if is_buffer_empty && capacity > 0 {
-            capacity
+        let new_capacity = if (length == 0 && total_capacity > 0) || additional > 0 {
+            total_capacity
         } else {
-            match capacity {
+            match total_capacity {
                 0 => 4,
                 cap => {
                     if cap == usize::MAX {
@@ -204,43 +222,62 @@ impl<'a, T, A : KAllocator> KVec<'a, T, A> {
             }
         };
 
-        let new_size = new_capacity
-            .checked_mul(elem_size)
-            .expect("Size overflow");
+        let new_buffer = {
+            let new_size = new_capacity
+                .checked_mul(elem_size)
+                .expect("New size calculation overflow");
 
-        let new_buffer = unsafe {
-            let ptr_raw = if is_buffer_empty {
-                // length == 0 is the very first allocation. At this point buffer pointer is dangling so we need to allocate it.
-                let new_layout = Layout::from_size_align(new_size, elem_align).unwrap();
-                let new_ptr = allocator.allocate(new_layout);
+            unsafe {
+                let ptr_raw = if length == 0 {
+                    // length == 0 is the very first allocation. At this point buffer pointer is dangling so we need to allocate it.
+                    let new_layout = Layout::from_size_align(new_size, elem_align).unwrap();
+                    let new_ptr = allocator.allocate(new_layout);
 
-                new_ptr
-            } else {
-                // length != 0 means that we are reallocating which means it's safe to access buffer's pointer.
-                let new_layout = Layout::from_size_align(new_size, elem_align).unwrap();
-                let old_ptr = buffer.as_ptr() as *mut u8;
-                let new_ptr = allocator.reallocate(old_ptr, new_layout);
+                    new_ptr
+                } else {
+                    // length != 0 means that we are reallocating which means it's safe to access buffer's pointer.
+                    let old_size = old_capacity
+                        .checked_mul(elem_size)
+                        .expect("Old size calculation overflow");
 
-                new_ptr
-            };
+                    let old_layout = Layout::from_size_align(old_size, elem_align).unwrap();
+                    let old_ptr = buffer.as_ptr() as *mut u8;
+                    let new_ptr = allocator.reallocate(old_ptr, old_layout, new_size);
 
-            let Some(ptr_raw) = ptr_raw else {
-                todo!("Try to defragment the memory in the allocator, or something");
-            };
+                    new_ptr
+                };
 
-            NonNull::new_unchecked(ptr_raw as *mut T)
+                let Some(ptr_raw) = ptr_raw else {
+                    todo!("Try to defragment the memory in the allocator, or something");
+                };
+
+                NonNull::new_unchecked(ptr_raw as *mut T)
+            }
         };
 
+        assert!(new_capacity > length, "Capacity must always be greater than length");
         return (new_buffer, new_capacity);
     }
 }
 
 impl<'a, T, A : KAllocator> Drop for KVec<'a, T, A> {
     fn drop(&mut self) {
-        unsafe {
-            core::ptr::drop_in_place(self._buffer.as_ptr());
-            self._allocator.deallocate(self._buffer.as_ptr() as *mut u8);
+        if std::mem::needs_drop::<T>() {
+            for offset in 0 .. self._length {
+                unsafe { 
+                    let element_ptr = self._buffer.add(offset).as_ptr();
+                    core::ptr::drop_in_place(element_ptr);
+                }
+            }
         }
+
+        if self._capacity > 0 {
+            let layout = layout_from_capacity::<T>(self._capacity);
+            self._allocator.deallocate(self._buffer.as_ptr() as *mut u8, layout);
+        }
+
+        self._length = 0;
+        self._capacity = 0;
     }
 }
 
@@ -390,8 +427,17 @@ impl<'a, T : PartialOrd, A : KAllocator> PartialOrd for KVec<'a, T, A> {
     }
 }
 
+impl<'a, T : Clone, A : KAllocator> Clone for KVec<'a, T, A> {
+    fn clone(&self) -> Self {
+        let mut cloned = KVec::with_capacity(self._allocator, self._capacity);
+        cloned.extend_from_slice(&self);
+        return cloned;
+    }
+}
 
 mod test {
+    use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
+
     use crate::alloc::global::GlobalAllocator;
     use super::KVec;
 
@@ -527,13 +573,66 @@ mod test {
     #[test]
     fn test_kvec_extend_from_slice() {
         let allocator = GlobalAllocator::new();
-        let mut kvec = KVec::<usize, GlobalAllocator>::with_capacity(&allocator, 0);
-
+        let mut kvec = KVec::<usize, GlobalAllocator>::new(&allocator);
+        assert_eq!(0, kvec._capacity);
+        assert_eq!(0, kvec._length);
+        
         kvec.extend_from_slice(&[1, 2, 3, 4, 5]);
+        assert_eq!(5, kvec._capacity);
+        assert_eq!(5, kvec._length);
+        
         kvec.extend_from_slice(&[6, 7, 8, 9, 10]);
+        assert_eq!(10, kvec._capacity);
+        assert_eq!(10, kvec._length);
+
         kvec.extend_from_slice(&[11, 12, 13, 14, 15]);
+        assert_eq!(15, kvec._capacity);
+        assert_eq!(15, kvec._length);
 
         let total_kvec = KVec::from_slice(&allocator, &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]);
         assert_eq!(total_kvec, kvec);
+        assert_eq!(15, kvec._capacity);
+        assert_eq!(15, kvec._length);
+    }
+
+    #[test]
+    fn test_kvec_clone() {
+        let allocator = GlobalAllocator::new();
+        let mut kvec1 = KVec::<usize, GlobalAllocator>::new(&allocator);
+
+        kvec1.push(1);
+        kvec1.push(2);
+        kvec1.push(3);
+        kvec1.push(4);
+        kvec1.push(5);
+
+        let kvec2 = kvec1.clone();
+        assert_eq!(kvec1, kvec2);
+
+        assert_eq!(kvec1._capacity, kvec2._capacity);
+        assert_eq!(kvec1._length, kvec2._length);
+        assert_ne!(kvec1._buffer.addr(), kvec2._buffer.addr());
+    }
+
+    #[test]
+    fn test_kvec_drop_is_called() {
+        let allocator = GlobalAllocator::new();
+        let dropflag = Arc::new(AtomicBool::new(false));
+        struct MustBeDropped(Arc<AtomicBool>);
+        
+        impl Drop for MustBeDropped {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::Relaxed);
+            }
+        }
+
+        {
+            let dropflag = Arc::clone(&dropflag);
+
+            let mut kvec = KVec::new(&allocator);
+            kvec.push(MustBeDropped(dropflag));
+        }
+
+        assert_eq!(true, dropflag.load(Ordering::Relaxed));
     }
 }

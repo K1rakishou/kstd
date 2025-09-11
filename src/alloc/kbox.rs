@@ -1,6 +1,5 @@
 use core::{alloc::Layout, any::type_name, ops::{Deref, DerefMut}, ptr::NonNull};
-
-use crate::alloc::kallocator::KAllocator;
+use crate::{alloc::kallocator::KAllocator, collection::layout_from_capacity};
 
 pub struct KBox<'a, T, A : KAllocator> {
     _allocator: &'a A,
@@ -25,14 +24,6 @@ impl<'a, T, A : KAllocator> KBox<'a, T, A> {
         }
     }
 
-    pub fn into_inner(self) -> T {
-        unsafe {
-            let value = core::ptr::read(self.ptr.as_ptr());
-            core::mem::forget(self);
-            return value;
-        }
-    }
-
     pub fn as_ptr(&self) -> *mut T {
         return self.ptr.as_ptr();
     }
@@ -42,7 +33,9 @@ impl<'a, T, A : KAllocator> Drop for KBox<'a, T, A> {
     fn drop(&mut self) {
         unsafe {
             core::ptr::drop_in_place(self.as_ptr());
-            self._allocator.deallocate(self.as_ptr() as *mut u8);
+
+            let layout = Layout::new::<T>();
+            self._allocator.deallocate(self.as_ptr() as *mut u8, layout);
         }
     }
 }
@@ -58,5 +51,30 @@ impl<'a, T, A : KAllocator> Deref for KBox<'a, T, A> {
 impl<'a, T, A : KAllocator> DerefMut for KBox<'a, T, A> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.as_ptr() }
+    }
+}
+
+mod test {
+    use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
+    use crate::alloc::{global::GlobalAllocator, kbox::KBox};
+
+    #[test]
+    fn test_kbox_drop_is_called() {
+        let allocator = GlobalAllocator::new();
+        let dropflag = Arc::new(AtomicBool::new(false));
+        struct MustBeDropped(Arc<AtomicBool>);
+        
+        impl Drop for MustBeDropped {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::Relaxed);
+            }
+        }
+
+        {
+            let dropflag = Arc::clone(&dropflag);
+            KBox::new(&allocator, MustBeDropped(dropflag));
+        }
+
+        assert_eq!(true, dropflag.load(Ordering::Relaxed));
     }
 }

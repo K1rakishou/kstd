@@ -1,6 +1,5 @@
-use core::alloc::Layout;
-
-use crate::alloc::{kallocator::KAllocator, platform};
+use core::alloc::{Layout};
+use crate::alloc::{kallocator::KAllocator};
 
 #[derive(Debug)]
 pub struct GlobalAllocator {
@@ -17,12 +16,7 @@ impl GlobalAllocator {
 
 impl KAllocator for GlobalAllocator {
     fn allocate(&self, layout: Layout) -> Option<*mut u8> {
-        let raw_ptr = if cfg!(unix) {
-            platform::linux::allocate(layout)
-        } else {
-            todo!("Not implemented")
-        };
-
+        let raw_ptr = unsafe { std::alloc::alloc(layout) };
         if raw_ptr.is_null() {
             return None;
         }
@@ -30,13 +24,8 @@ impl KAllocator for GlobalAllocator {
         return Some(raw_ptr);
     }
 
-    fn reallocate(&self, ptr: *mut u8, new_layout: Layout) -> Option<*mut u8> {
-        let raw_ptr = if cfg!(unix) {
-            platform::linux::reallocate(ptr, new_layout)
-        } else {
-            todo!("Not implemented")
-        };
-
+    fn reallocate(&self, ptr: *mut u8, old_layout: Layout, new_size: usize) -> Option<*mut u8> {
+        let raw_ptr = unsafe { std::alloc::realloc(ptr, old_layout, new_size) };
         if raw_ptr.is_null() {
             return None;
         }
@@ -44,12 +33,8 @@ impl KAllocator for GlobalAllocator {
         return Some(raw_ptr);
     }
 
-    fn deallocate(&self, ptr: *mut u8) {
-        if cfg!(unix) {
-            platform::linux::deallocate(ptr)
-        } else {
-            todo!("Not implemented")
-        };
+    fn deallocate(&self, ptr: *mut u8, layout: Layout) {
+        unsafe { std::alloc::dealloc(ptr, layout); }
     }
 
     fn defragment(&self) {

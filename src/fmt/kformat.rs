@@ -40,7 +40,6 @@ macro_rules! kformatln {
     }};
 }
 
-
 mod test {
     use crate::alloc::global::GlobalAllocator;
 
