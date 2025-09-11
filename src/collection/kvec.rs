@@ -86,6 +86,42 @@ impl<'a, T, A : KAllocator> KVec<'a, T, A> {
         return Some(value);
     }
 
+    pub fn remove(&mut self, index: usize) -> Option<T> {
+        if index >= self._length || self._length == 0 {
+            return None;
+        }
+
+        if index == self._length - 1 {
+            return self.pop();
+        }
+
+        let value = unsafe {
+            let element_ptr = self._buffer
+                .offset(index as isize)
+                .as_ptr();
+            
+            core::ptr::read(element_ptr)
+        };
+
+        let src = unsafe {
+            self._buffer
+                .offset((index as isize) + 1)
+                .as_ptr()
+        };
+
+        let dst = unsafe {
+            self._buffer
+                .offset(index as isize)
+                .as_ptr()
+        };
+        
+        let count = self._length - index;
+        unsafe { core::ptr::copy(src, dst, count) };
+
+        self._length = self._length - 1;
+        return Some(value);
+    }
+
     #[inline]
     pub fn get(&self, index: usize) -> Option<&T> {
         if index >= self._length {
@@ -634,5 +670,45 @@ mod test {
         }
 
         assert_eq!(true, dropflag.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn test_kvec_remove_start() {
+        let allocator = GlobalAllocator::new();
+        let mut kvec = KVec::<usize, GlobalAllocator>::new(&allocator);
+
+        kvec.push(1);
+        kvec.push(2);
+        kvec.push(3);
+        kvec.push(4);
+        kvec.push(5);
+
+        assert_eq!(1, kvec.remove(0).unwrap());
+        assert_eq!(2, kvec.remove(0).unwrap());
+        assert_eq!(3, kvec.remove(0).unwrap());
+        assert_eq!(4, kvec.remove(0).unwrap());
+        assert_eq!(5, kvec.remove(0).unwrap());
+        assert!(kvec.remove(0).is_none());
+        assert!(kvec.remove(999).is_none());
+    }
+
+    #[test]
+    fn test_kvec_remove_end() {
+        let allocator = GlobalAllocator::new();
+        let mut kvec = KVec::<usize, GlobalAllocator>::new(&allocator);
+
+        kvec.push(1);
+        kvec.push(2);
+        kvec.push(3);
+        kvec.push(4);
+        kvec.push(5);
+
+        assert_eq!(5, kvec.remove(4).unwrap());
+        assert_eq!(4, kvec.remove(3).unwrap());
+        assert_eq!(3, kvec.remove(2).unwrap());
+        assert_eq!(2, kvec.remove(1).unwrap());
+        assert_eq!(1, kvec.remove(0).unwrap());
+        assert!(kvec.remove(0).is_none());
+        assert!(kvec.remove(999).is_none());
     }
 }

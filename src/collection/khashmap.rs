@@ -31,7 +31,7 @@ impl<'a, K : Hash + PartialEq, V : PartialEq, A : KAllocator> KHashMap<'a, K, V,
     }
 
     pub fn remove(&mut self, key: &K) -> Option<V> {
-        todo!()
+        return self._buckets.remove(key);
     }
 
     pub fn length(&self) -> usize {
@@ -70,13 +70,18 @@ impl<'a, K : Hash + PartialEq, V : PartialEq, A : KAllocator> KBuckets<'a, K, V,
         return bucket.insert(key, value).map(|(_, v)| v);
     }
 
-    fn remove(&mut self, key: K) -> Option<V> {
+    fn remove(&mut self, key: &K) -> Option<V> {
         let a = self.load_factor();
         if a < MIN_LOAD_FACTOR {
             self.resize(ResizeMode::Down);
         }
 
-        todo!();
+        let bucket_index = Self::bucket_index(&self._build_hasher, &key, self._count);
+        let Some(bucket) = self.get_bucket_mut(bucket_index) else {
+            return None;
+        };
+
+        return bucket.remove(key).map(|(_, v)| v);
     }
 
     fn get(&self, key: &K) -> Option<&V> {
@@ -235,6 +240,15 @@ impl<'a, K : Hash + PartialEq, V : PartialEq, A : KAllocator> KBucket<'a, K, V, 
         };
     }
 
+    fn remove(&mut self, key: &K) -> Option<(K, V)> {
+        let index_maybe = self.kv_index(&key);
+        
+        return match index_maybe {
+            Some(index) => self._kvs.remove(index).unwrap(),
+            None => None,
+        };
+    }
+
     fn get(&self, key: &K) -> Option<&V> {
         let index_maybe = self.kv_index(key);
 
@@ -282,5 +296,21 @@ mod test {
 
         assert_eq!(true, khashmap.get(&12345678).is_none());
         assert_eq!(3, khashmap.length());
+    }
+
+    #[test]
+    fn khashmap_remove() {
+        let allocator = GlobalAllocator::new();
+        let mut khashmap = KHashMap::<u64, u64, GlobalAllocator>::new(&allocator);
+
+        khashmap.insert(1, 1);
+        khashmap.insert(123, 321);
+        khashmap.insert(444, 1);
+
+        assert_eq!(1, khashmap.remove(&1).unwrap());
+        assert_eq!(321, khashmap.remove(&123).unwrap());
+        assert_eq!(1, khashmap.remove(&444).unwrap());
+        assert!(khashmap.remove(&444).is_none());
+        assert!(khashmap.remove(&123345).is_none());
     }
 }
