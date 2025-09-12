@@ -1,5 +1,5 @@
-use std::{alloc::Layout, collections::HashMap, hash::{BuildHasher, DefaultHasher, Hash, RandomState}, ptr::NonNull};
-use crate::{alloc::kallocator::KAllocator, collection::kvec::KVec, fmt::kformat, kformatln, kprintln};
+use std::hash::{BuildHasher, Hash, RandomState};
+use crate::{alloc::kallocator::KAllocator, collection::kvec::KVec, kformatln};
 
 const MIN_LOAD_FACTOR: f32 = 0.25;
 const MAX_LOAD_FACTOR: f32 = 0.75;
@@ -14,6 +14,7 @@ pub struct KHashMap<'a, K : Hash + PartialEq, V : PartialEq, A : KAllocator, BH 
     _buckets: KBuckets<'a, K, V, A, BH>,
 }
 
+#[allow(dead_code)]
 impl<'a, K : Hash + PartialEq, V : PartialEq, A : KAllocator> KHashMap<'a, K, V, A, RandomState> {
     pub fn new(allocator: &'a A) -> Self {
         return Self {
@@ -46,6 +47,7 @@ struct KBuckets<'a, K : Hash + PartialEq, V : PartialEq, A : KAllocator, BH : Bu
     _build_hasher: BH
 }
 
+#[allow(dead_code)]
 impl<'a, K : Hash + PartialEq, V : PartialEq, A : KAllocator> KBuckets<'a, K, V, A, RandomState> {
     fn new(allocator: &'a A) -> Self {
         return Self {
@@ -93,7 +95,7 @@ impl<'a, K : Hash + PartialEq, V : PartialEq, A : KAllocator> KBuckets<'a, K, V,
         return bucket.get(key);
     }
 
-    fn get_mut(&mut self, key: &K) -> Option<&mut V> {
+    fn get_mut(&mut self, _key: &K) -> Option<&mut V> {
         todo!()
     }
     
@@ -221,6 +223,7 @@ struct KBucket<'a, K : Hash + PartialEq, V : PartialEq, A : KAllocator> {
     _kvs: KVec<'a, Option<(K, V)>, A>
 }
 
+#[allow(dead_code)]
 impl<'a, K : Hash + PartialEq, V : PartialEq, A : KAllocator> KBucket<'a, K, V, A> {
     fn new(allocator: &'a A) -> Self {
         return Self {
@@ -274,6 +277,7 @@ impl<'a, K : Hash + PartialEq, V : PartialEq, A : KAllocator> KBucket<'a, K, V, 
     }
 }
 
+#[allow(unused_imports)]
 mod test {
     use crate::{alloc::global::GlobalAllocator, collection::khashmap::KHashMap};
 

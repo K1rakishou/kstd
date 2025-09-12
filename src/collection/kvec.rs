@@ -11,6 +11,7 @@ pub struct KVec<'a, T, A : KAllocator> {
     _length: usize
 }
 
+#[allow(dead_code)]
 impl<'a, T, A : KAllocator> KVec<'a, T, A> {
     pub fn new(allocator: &'a A) -> Self {
         return Self {
@@ -471,6 +472,7 @@ impl<'a, T : Clone, A : KAllocator> Clone for KVec<'a, T, A> {
     }
 }
 
+#[allow(unused_imports)]
 mod test {
     use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
 

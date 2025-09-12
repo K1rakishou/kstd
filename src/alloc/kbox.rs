@@ -1,5 +1,5 @@
 use core::{alloc::Layout, any::type_name, ops::{Deref, DerefMut}, ptr::NonNull};
-use crate::{alloc::kallocator::KAllocator, collection::layout_from_capacity};
+use crate::alloc::kallocator::KAllocator;
 
 pub struct KBox<'a, T, A : KAllocator> {
     _allocator: &'a A,
@@ -7,6 +7,7 @@ pub struct KBox<'a, T, A : KAllocator> {
 }
 
 impl<'a, T, A : KAllocator> KBox<'a, T, A> {
+    #[allow(dead_code)]
     pub fn new(allocator: &'a A, value: T) -> Self {
         unsafe {
             let layout = Layout::new::<T>();
@@ -54,6 +55,7 @@ impl<'a, T, A : KAllocator> DerefMut for KBox<'a, T, A> {
     }
 }
 
+#[allow(unused_imports)]
 mod test {
     use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
     use crate::alloc::{global::GlobalAllocator, kbox::KBox};

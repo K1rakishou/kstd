@@ -18,10 +18,12 @@ pub fn kformatln_args_fn<'a, A: KAllocator>(allocator: &'a A, add_new_line: bool
     return out;
 }
 
+#[allow(dead_code)]
 pub fn kformat_fn<'a, A: KAllocator>(allocator: &'a A, args: core::fmt::Arguments<'_>) -> KString<'a, A> {
     return kformatln_args_fn(allocator, false, args);
 }
 
+#[allow(dead_code)]
 pub fn kformatln_fn<'a, A: KAllocator>(allocator: &'a A, args: core::fmt::Arguments<'_>) -> KString<'a, A> {
     return kformatln_args_fn(allocator, true, args);
 }
@@ -40,6 +42,7 @@ macro_rules! kformatln {
     }};
 }
 
+#[allow(unused_imports)]
 mod test {
     use crate::alloc::global::GlobalAllocator;
 
@@ -56,7 +59,7 @@ mod test {
         struct Test {}
 
         impl core::fmt::Display for Test {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            fn fmt(&self, _: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 return Err(core::fmt::Error)
             }
         }

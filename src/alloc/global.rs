@@ -6,6 +6,7 @@ pub struct GlobalAllocator {
     
 }
 
+#[allow(dead_code)]
 impl GlobalAllocator {
     pub fn new() -> Self {
         return Self {

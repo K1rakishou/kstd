@@ -1,6 +1,7 @@
-use crate::{alloc::{kallocator::KAllocator, kstring::KString}, kformat};
+use crate::alloc::{kallocator::KAllocator, kstring::KString};
 use std::io::{stdout, Write};
 
+#[allow(dead_code)]
 pub fn kprint_string_fn<'a, A: KAllocator>(s: KString<'a, A>, with_new_line: bool) {
     let mut lock = stdout().lock();
 
@@ -11,6 +12,7 @@ pub fn kprint_string_fn<'a, A: KAllocator>(s: KString<'a, A>, with_new_line: boo
     }
 }
 
+#[allow(dead_code)]
 pub fn kprint_str_fn<'a>(s: &str) {
     let mut lock = stdout().lock();
     write!(lock, "{}", s).unwrap();
@@ -36,6 +38,7 @@ macro_rules! kprintln {
     }};
 }
 
+#[allow(unused_imports)]
 mod test {
     use crate::alloc::global::GlobalAllocator;
 

@@ -8,11 +8,13 @@ pub struct KString<'a, A : KAllocator> {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct KFromUtf8Error<'a, A : KAllocator> {
     bytes: KVec<'a, u8, A>,
     error: Utf8Error,
 }
 
+#[allow(dead_code)]
 impl<'a, A : KAllocator> KString<'a, A> {
     pub fn new(allocator: &'a A) -> Self {
         return Self {
@@ -99,6 +101,7 @@ impl<'a, A : KAllocator> core::fmt::Write for KString<'a, A> {
 
 // TODO: impl Deref, DerefMut, AsRef<str>
 
+#[allow(unused_imports)]
 mod test {
     use crate::alloc::{global::GlobalAllocator, kstring::KString};
 
