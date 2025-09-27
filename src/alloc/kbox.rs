@@ -6,8 +6,8 @@ pub struct KBox<'a, T, A : KAllocator> {
     ptr: NonNull<T>
 }
 
+#[allow(dead_code)]
 impl<'a, T, A : KAllocator> KBox<'a, T, A> {
-    #[allow(dead_code)]
     pub fn new(allocator: &'a A, value: T) -> Self {
         unsafe {
             let layout = Layout::new::<T>();

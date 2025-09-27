@@ -3,6 +3,7 @@ use std::alloc::Layout;
 pub mod kvec;
 pub mod kheap;
 pub mod khashmap;
+pub mod krbtree;
 
 pub fn layout_from_capacity<T>(capacity: usize) -> Layout {
     let elem_size = core::mem::size_of::<T>();

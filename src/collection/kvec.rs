@@ -488,6 +488,8 @@ mod test {
             kvec.push(i);
         }
 
+        assert_eq!(1024, kvec.len());
+
         for i in 0..1024 {
             assert_eq!(i, kvec[i] as usize);
             assert_eq!(i, *kvec.get_mut(i).unwrap() as usize);
@@ -497,6 +499,7 @@ mod test {
             assert_eq!(i, kvec.pop().unwrap());
         }
 
+        assert_eq!(0, kvec.len());
         assert_eq!(None, kvec.pop());
     }
 
@@ -712,5 +715,19 @@ mod test {
         assert_eq!(1, kvec.remove(0).unwrap());
         assert!(kvec.remove(0).is_none());
         assert!(kvec.remove(999).is_none());
+    }
+
+    #[test]
+    fn test_kvec_swap() {
+        let allocator = GlobalAllocator::new();
+        let mut kvec = KVec::<usize, GlobalAllocator>::new(&allocator);
+
+        kvec.push(1);
+        kvec.push(2);
+
+        kvec.swap(0, 1);
+
+        assert_eq!(2, kvec[0]);
+        assert_eq!(1, kvec[1]);
     }
 }
