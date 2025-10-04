@@ -2,6 +2,8 @@ use std::{cmp::Ordering, hash::Hash, usize};
 use std::fmt::Debug;
 use crate::{alloc::kallocator::KAllocator, collection::kvec::KVec};
 
+static ENABLE_DEBUG_LOGS: bool = false;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct NodeIdx(usize);
 
@@ -42,8 +44,11 @@ impl<'a, K : Debug + Hash + Ord, V : Debug + PartialEq, A : KAllocator> KRBTree<
 
     pub fn insert(&mut self, key: K, value: V) {
         let color = KRBTreeNodeColor::Red;
+        if ENABLE_DEBUG_LOGS {
+            println!("Inserting ({:?}, {:?})", key, value);
+        }
 
-        let inserted_node_idx = if self._nodes.is_empty() {
+        if self._nodes.is_empty() {
             let root_idx = self._pool.borrow(None, KRBTreeNodeColor::Black);
             self._nodes.push(root_idx);
             
@@ -52,21 +57,50 @@ impl<'a, K : Debug + Hash + Ord, V : Debug + PartialEq, A : KAllocator> KRBTree<
 
             self.node_mut(root_idx)._right = Some(inserted_node_idx);
             self.node_mut(inserted_node_idx)._parent = Some(root_idx);
-            inserted_node_idx       
+
+            self.rebalance(inserted_node_idx);
         } else {
-            let (inserted_node_idx, need_rebalance) = self.insert_recursive(self._nodes[1], key, value, color);
-            if !need_rebalance {
-                return;
+            let (inserted_node_idx, need_rebalance) = self.insert_impl(self.first_node_idx(), key, value, color);
+            if need_rebalance {
+                self.rebalance(inserted_node_idx);
             }
-
-            inserted_node_idx
-        };
-
-        self.rebalance(inserted_node_idx);
+        }
     }
 
     pub fn get(&self, key: K) -> Option<&V> {
-        todo!()
+        let mut next_node_idx = self.node(self.root_node_idx())._right.as_ref();
+
+        while let Some(node_idx) = next_node_idx.take() {
+            let node = &self.node(*node_idx);
+            if ENABLE_DEBUG_LOGS {
+                println!("[get] node_idx: {}, node: {:?}", node_idx.0, node._kv);
+            }
+            
+            if let Some(kv) = &node._kv {
+                let inserted_key = &kv.0;
+                let inserted_value = &kv.1;
+
+                match key.cmp(inserted_key) {
+                    Ordering::Less => {
+                        next_node_idx = node._left.as_ref();
+
+                        if ENABLE_DEBUG_LOGS {
+                            println!("[get] left_node_idx: {:?}", next_node_idx);
+                        }
+                    },
+                    Ordering::Equal => return Some(inserted_value),
+                    Ordering::Greater => {
+                        next_node_idx = node._right.as_ref();
+
+                        if ENABLE_DEBUG_LOGS {
+                            println!("[get] right_node_idx: {:?}", next_node_idx);
+                        }
+                    },
+                }
+            }
+        }
+
+        return None;
     }
 
     pub fn length(&self) -> usize {
@@ -78,23 +112,14 @@ impl<'a, K : Debug + Hash + Ord, V : Debug + PartialEq, A : KAllocator> KRBTree<
     }
 
     #[inline]
-    fn left_child_idx(&self, idx: NodeIdx) -> Option<NodeIdx> {
-        return self.node(idx)._left;
+    fn root_node_idx(&self) -> NodeIdx {
+        return *self._nodes.get(0).expect("KRBTree has no root");
     }
 
     #[inline]
-    fn right_child_idx(&self, idx: NodeIdx) -> Option<NodeIdx> {
-        return self.node(idx)._right;
-    }
-
-    #[inline]
-    fn parent_idx(&self, idx: NodeIdx) -> Option<NodeIdx> {
-        return self.node(idx)._parent;
-    }
-
-    #[inline]
-    fn grandparent_idx(&self, idx: NodeIdx) -> Option<NodeIdx> {
-        return self.parent_idx(self.parent_idx(idx)?);
+    fn first_node_idx(&self) -> NodeIdx {
+        let root_idx = self.root_node_idx();
+        return self.node(root_idx)._right.expect("KRBTree is empty");
     }
 
     #[inline]
@@ -103,76 +128,94 @@ impl<'a, K : Debug + Hash + Ord, V : Debug + PartialEq, A : KAllocator> KRBTree<
     }
 
     #[inline]
+    fn node_maybe(&self, idx: NodeIdx) -> Option<&KRBTreeNode<K, V>> {
+        return self._pool.get_maybe(idx);
+    }
+
+    #[inline]
     fn node_mut(&mut self, idx: NodeIdx) -> &mut KRBTreeNode<K, V> {
         return self._pool.get_mut(idx);
     }
 
-    // TODO: do not use the recursion
-    fn insert_recursive(&mut self, current_idx: NodeIdx, new_key: K, new_value: V, color: KRBTreeNodeColor) -> (NodeIdx, bool) {
+    fn insert_impl(&mut self, current_idx: NodeIdx, new_key: K, new_value: V, color: KRBTreeNodeColor) -> (NodeIdx, bool) {
         debug_assert!(!self.is_root(current_idx));
 
-        let mut next_node_idx = Some(current_idx);
+        let current_node = self.node(current_idx);
+        let Some(current_node_kv) = &current_node._kv else {
+            unreachable!();
+        };
 
-        while let Some(current_idx) = next_node_idx.take() {
-            let current_node = self.node(current_idx);
-            let Some(current_node_kv) = &current_node._kv else {
-                unreachable!();
-            };
+        let child_node_idx = match new_key.cmp(&current_node_kv.0) {
+            Ordering::Less => {
+                match self.node(current_idx)._left {
+                    Some(left_idx) => {
+                        if ENABLE_DEBUG_LOGS {
+                            println!("[insert_impl] going left");
+                        }
 
-            match new_key.cmp(&current_node_kv.0) {
-                Ordering::Less => {
-                    match self.left_child_idx(current_idx) {
-                        Some(left_idx) => {
-                            next_node_idx = Some(left_idx);
-                            continue;
-                        },
-                        None => {
-                            let new_node_idx = self._pool.borrow(Some((new_key, new_value)), color);
+                        left_idx
+                    },
+                    None => {
+                        if ENABLE_DEBUG_LOGS {
+                            println!("[insert_impl] found node at left child, current node: {:?}", current_node._kv);
+                        }
 
-                            self.node_mut(current_idx)._left = Some(new_node_idx);
-                            self.node_mut(new_node_idx)._parent = Some(current_idx);
-                    
-                            return (new_node_idx, true);
-                        },
-                    }
-                },
-                Ordering::Equal => {
-                    // replace current node's value with the new one
-                    let current_node = self.node_mut(current_idx);
-                    current_node._kv.replace((new_key, new_value));
+                        let new_node_idx = self._pool.borrow(Some((new_key, new_value)), color);
+
+                        self.node_mut(current_idx)._left = Some(new_node_idx);
+                        self.node_mut(new_node_idx)._parent = Some(current_idx);
                 
-                    return (current_idx, false);
-                },
-                Ordering::Greater => {
-                    match self.right_child_idx(current_idx) {
-                        Some(right_idx) => {
-                            next_node_idx = Some(right_idx);
-                            continue;
-                        },
-                        None => {
-                            let new_node_idx = self._pool.borrow(Some((new_key, new_value)), color);
-                    
-                            self.node_mut(current_idx)._right = Some(new_node_idx);
-                            self.node_mut(new_node_idx)._parent = Some(current_idx);
-                    
-                            return (new_node_idx, true);
-                        },
-                    }
-                },
-            };
-        }
+                        return (new_node_idx, true);
+                    },
+                }
+            },
+            Ordering::Equal => {
+                // replace current node's value with the new one
+                let current_node = self.node_mut(current_idx);
+                current_node._kv.replace((new_key, new_value));
 
-        unreachable!()
+                if ENABLE_DEBUG_LOGS {
+                    println!("[insert_impl] keys are equal");
+                }
+            
+                return (current_idx, false);
+            },
+            Ordering::Greater => {
+                match self.node(current_idx)._right {
+                    Some(right_idx) => {
+                        if ENABLE_DEBUG_LOGS {
+                            println!("[insert_impl] going right");
+                        }
+
+                        right_idx
+                    },
+                    None => {
+                        if ENABLE_DEBUG_LOGS {
+                            println!("[insert_impl] found node at right child, current node: {:?}", current_node._kv);
+                        }
+
+                        let new_node_idx = self._pool.borrow(Some((new_key, new_value)), color);
+                
+                        self.node_mut(current_idx)._right = Some(new_node_idx);
+                        self.node_mut(new_node_idx)._parent = Some(current_idx);
+                
+                        return (new_node_idx, true);
+                    },
+                }
+            },
+        };
+
+        return self.insert_impl(child_node_idx, new_key, new_value, color);
     }
 
     fn rebalance(&mut self, inserted_node_idx: NodeIdx) {
         let mut z_idx = inserted_node_idx;
         
         loop {
-            let Some(p_idx) = self.parent_idx(z_idx) else {
+            let Some(p_idx) = self.node(z_idx)._parent else {
                 break;
             };
-            let Some(g_idx) = self.parent_idx(p_idx) else {
+            let Some(g_idx) = self.node(p_idx)._parent else {
                 break;
             };
 
@@ -182,6 +225,10 @@ impl<'a, K : Debug + Hash + Ord, V : Debug + PartialEq, A : KAllocator> KRBTree<
 
             if self.is_node_black(p_idx) {
                 break;
+            }
+
+            if ENABLE_DEBUG_LOGS {
+                println!("[rebalance], z: {:?}", self.node(z_idx)._kv);
             }
 
             let g_node = self.node(g_idx);
@@ -194,6 +241,10 @@ impl<'a, K : Debug + Hash + Ord, V : Debug + PartialEq, A : KAllocator> KRBTree<
             };
 
             if let Some(u_idx) = u_idx && self.is_node_red(u_idx) {
+                if ENABLE_DEBUG_LOGS {
+                    println!("u {:?} is red", self.node(u_idx)._kv);
+                }
+                
                 self.color_node_black(p_idx);
                 self.color_node_black(u_idx);
                 if !self.is_root(g_idx) {
@@ -205,10 +256,14 @@ impl<'a, K : Debug + Hash + Ord, V : Debug + PartialEq, A : KAllocator> KRBTree<
             }
 
             if self.is_inner_child(z_idx, g_idx) {
-                if let Some(_) = self.node(p_idx)._right {
+                if ENABLE_DEBUG_LOGS {
+                    println!("z {:?} is inner child", self.node(z_idx)._kv);
+                }
+                
+                if self.node(p_idx)._right == Some(z_idx) {
                     self.rotate_left(p_idx);
                     z_idx = p_idx;
-                } else if let Some(_) = self.node(p_idx)._left {
+                } else if self.node(p_idx)._left == Some(z_idx) {
                     self.rotate_right(p_idx);
                     z_idx = p_idx;
                 } else {
@@ -219,14 +274,18 @@ impl<'a, K : Debug + Hash + Ord, V : Debug + PartialEq, A : KAllocator> KRBTree<
             }
 
             if self.is_outer_child(z_idx, g_idx) {
+                if ENABLE_DEBUG_LOGS {
+                    println!("z {:?} is outer child", self.node(z_idx)._kv);
+                }
+                
                 self.color_node_black(p_idx);
                 if !self.is_root(g_idx) {
                     self.color_node_red(g_idx);
                 }
 
-                if let Some(_) = self.node(g_idx)._left {
+                if self.node(g_idx)._left == Some(p_idx) {
                     self.rotate_right(g_idx);
-                } else if let Some(_) = self.node(g_idx)._right {
+                } else if self.node(g_idx)._right == Some(p_idx) {
                     self.rotate_left(g_idx);
                 } else {
                     unreachable!();
@@ -238,38 +297,34 @@ impl<'a, K : Debug + Hash + Ord, V : Debug + PartialEq, A : KAllocator> KRBTree<
             unreachable!();
         }
 
-        if let Some(first_node_idx) = self.node_mut(self._nodes[0])._right {
-            if self.is_node_red(first_node_idx) {
-                self.color_node_black(first_node_idx);
-            }
+        let first_node_idx = self.first_node_idx();
+        if self.is_node_red(first_node_idx) {
+            self.color_node_black(first_node_idx);
         }
     }
 
     fn rotate_left(&mut self, x_idx: NodeIdx) {
+        if ENABLE_DEBUG_LOGS {
+            println!("rotate_left around {:?}", self.node(x_idx)._kv);
+        }
+        
         let Some(y_dx) = self.node(x_idx)._right else {
-            return;
+            unreachable!();
         };
 
         let b_idx = self.node(y_dx)._left;
-        let p_idx = self.node(x_idx)._parent;
+        let p_idx = self.node(x_idx)._parent.expect("Parent is None");
 
-        match p_idx {
-            Some(p_idx) => {
-                if self.node(p_idx)._left == Some(x_idx) {
-                    self.node_mut(p_idx)._left = Some(y_dx);
-                } else {
-                    debug_assert_eq!(self.node(p_idx)._right, Some(x_idx));
-                    self.node_mut(p_idx)._right = Some(y_dx);
-                }
-                self.node_mut(y_dx)._parent = Some(p_idx);
-            }
-            None => {
-                self.node_mut(y_dx)._parent = None;
-                self._nodes[0] = y_dx;
-            }
+        if self.node(p_idx)._left == Some(x_idx) {
+            self.node_mut(p_idx)._left = Some(y_dx);
+        } else {
+            debug_assert_eq!(self.node(p_idx)._right, Some(x_idx));
+            self.node_mut(p_idx)._right = Some(y_dx);
         }
 
+        self.node_mut(y_dx)._parent = Some(p_idx);
         self.node_mut(x_idx)._right = b_idx;
+        
         if let Some(b_idx) = b_idx {
             self.node_mut(b_idx)._parent = Some(x_idx);
         }
@@ -279,30 +334,27 @@ impl<'a, K : Debug + Hash + Ord, V : Debug + PartialEq, A : KAllocator> KRBTree<
     }
 
     fn rotate_right(&mut self, x_idx: NodeIdx) {
+        if ENABLE_DEBUG_LOGS {
+            println!("rotate_right around {:?}", self.node(x_idx)._kv);
+        }
+        
         let Some(y_idx) = self.node(x_idx)._left else {
-            return;
+            unreachable!();
         };
 
         let b_idx = self.node(y_idx)._right;
-        let p_idx = self.node(x_idx)._parent;
+        let p_idx = self.node(x_idx)._parent.expect("Parent is None");
 
-        match p_idx {
-            Some(p_idx) => {
-                if self.node(p_idx)._right == Some(x_idx) {
-                    self.node_mut(p_idx)._right = Some(y_idx);
-                } else {
-                    debug_assert_eq!(self.node(p_idx)._left, Some(x_idx));
-                    self.node_mut(p_idx)._left = Some(y_idx);
-                }
-                self.node_mut(y_idx)._parent = Some(p_idx);
-            }
-            None => {
-                self.node_mut(y_idx)._parent = None;
-                self._nodes[0] = y_idx; 
-            }
+        if self.node(p_idx)._right == Some(x_idx) {
+            self.node_mut(p_idx)._right = Some(y_idx);
+        } else {
+            debug_assert_eq!(self.node(p_idx)._left, Some(x_idx));
+            self.node_mut(p_idx)._left = Some(y_idx);
         }
-
+        
+        self.node_mut(y_idx)._parent = Some(p_idx);
         self.node_mut(x_idx)._left = b_idx;
+
         if let Some(b_idx) = b_idx {
             self.node_mut(b_idx)._parent = Some(x_idx);
         }
@@ -357,6 +409,7 @@ impl<'a, K : Debug + Hash + Ord, V : Debug + PartialEq, A : KAllocator> KRBTree<
         return false;
     }
 
+    #[inline]
     fn reset(&mut self, idx: NodeIdx) {
         debug_assert!(!self.is_root(idx), "idx: {}", idx.0);
 
@@ -435,6 +488,11 @@ impl<'a, K : Debug + Hash + Ord, V : Debug + PartialEq, A : KAllocator> KRBTreeN
     }
 
     #[inline]
+    fn get_maybe(&self, idx: NodeIdx) -> Option<&KRBTreeNode<K, V>> {
+        return self._nodes.get(idx.0);
+    }
+
+    #[inline]
     fn get(&self, idx: NodeIdx) -> &KRBTreeNode<K, V> {
         return &self._nodes[idx.0];
     }
@@ -479,10 +537,23 @@ impl NodeIdx {
 
 #[allow(unused_imports, dead_code)]
 mod test {
+    use std::process::Command;
     use std::{fmt::Debug, fs::File, hash::Hash};
     use std::io::Write;
     use crate::{alloc::{global::GlobalAllocator, kallocator::KAllocator}, collection::krbtree::{KRBTree, KRBTreeNode, KRBTreeNodeColor, NodeIdx}};
 
+    ///      Before rotation
+    ///            11
+    ///           /
+    ///          5
+    ///         /
+    ///        2
+    /// 
+    ///      After rotation
+    ///            5
+    ///           / \
+    ///          2   11 
+    /// 
     #[test]
     fn test_krbtree_insert_right_outer_case() {
         let allocator = GlobalAllocator::new();
@@ -529,6 +600,18 @@ mod test {
         assert_eq!(KRBTreeNodeColor::Red, node_2._color);
     }
     
+    ///      Before rotation
+    ///            2
+    ///             \
+    ///              5
+    ///               \
+    ///               11
+    ///  
+    ///      After rotation
+    ///            5
+    ///           / \
+    ///          2   11 
+    /// 
     #[test]
     fn test_krbtree_insert_left_rotation_outer_case() {
         let allocator = GlobalAllocator::new();
@@ -575,6 +658,18 @@ mod test {
         assert_eq!(KRBTreeNodeColor::Red, node_2._color);
     }
 
+    ///      Before rotation
+    ///            11
+    ///           /
+    ///          5
+    ///           \
+    ///            7
+    /// 
+    ///      After rotation
+    ///            7
+    ///           / \
+    ///          5   11 
+    /// 
     #[test]
     fn test_krbtree_insert_left_right_rotation_inner_case() {
         let allocator = GlobalAllocator::new();
@@ -621,6 +716,18 @@ mod test {
         assert_eq!(KRBTreeNodeColor::Red, node_5._color);
     }
 
+    ///      Before rotation
+    ///            11
+    ///             \
+    ///              17
+    ///             /
+    ///            13
+    /// 
+    ///      After rotation
+    ///            13
+    ///           / \
+    ///          11   17 
+    /// 
     #[test]
     fn test_krbtree_insert_right_left_rotation_inner_case() {
         let allocator = GlobalAllocator::new();
@@ -667,6 +774,21 @@ mod test {
         assert_eq!(KRBTreeNodeColor::Red, node_17._color);
     }
 
+    ///      Before rotation
+    ///            100
+    ///           /   \
+    ///          60   140
+    ///         /
+    ///        50
+    ///         \
+    ///         55
+    /// 
+    ///      After rotation
+    ///            100
+    ///           /   \
+    ///          55   140
+    ///         /  \
+    ///        50  60
     #[test]
     fn test_krbtree_insert_left_right_under_left_child_of_parent() {
         let allocator = GlobalAllocator::new();
@@ -729,6 +851,21 @@ mod test {
         assert_eq!(KRBTreeNodeColor::Red, node_60._color);
     }
 
+    ///      Before rotation
+    ///            100
+    ///           /   \
+    ///          60   140
+    ///                 \
+    ///                150
+    ///                 /
+    ///               145
+    /// 
+    ///      After rotation
+    ///            100
+    ///           /   \
+    ///          60   145
+    ///               / \
+    ///             140 150   
     #[test]
     fn test_krbtree_insert_right_left_under_right_child_of_parent() {
         let allocator = GlobalAllocator::new();
@@ -791,8 +928,209 @@ mod test {
         assert_eq!(KRBTreeNodeColor::Red, node_150._color);
     }
 
+    #[test]
+    fn test_krbtree_insert_1_to_8() {
+        let allocator = GlobalAllocator::new();
+        let mut krbtree = KRBTree::<usize, usize, GlobalAllocator>::new(&allocator, 4);
+
+        let elements: Vec<usize> = vec![1, 2, 3, 4, 5, 6, 7, 8];
+
+        for e in elements.iter() {
+            krbtree.insert(*e, *e);
+        }
+
+        let root_idx = NodeIdx::new(0);
+        let node_1_idx = NodeIdx::new(1);
+        let node_2_idx = NodeIdx::new(2);
+        let node_3_idx = NodeIdx::new(3);
+        let node_4_idx = NodeIdx::new(4);
+        let node_5_idx = NodeIdx::new(5);
+        let node_6_idx = NodeIdx::new(6);
+        let node_7_idx = NodeIdx::new(7);
+        let node_8_idx = NodeIdx::new(8);
+
+        let root = krbtree.node(root_idx);
+        assert_eq!(true, root._kv.is_none());
+        let node_1 = krbtree.node(node_1_idx);
+        assert_eq!(1, node_1._kv.unwrap().0);
+        let node_2 = krbtree.node(node_2_idx);
+        assert_eq!(2, node_2._kv.unwrap().0);
+        let node_3 = krbtree.node(node_3_idx);
+        assert_eq!(3, node_3._kv.unwrap().0);
+        let node_4 = krbtree.node(node_4_idx);
+        assert_eq!(4, node_4._kv.unwrap().0);
+        let node_5 = krbtree.node(node_5_idx);
+        assert_eq!(5, node_5._kv.unwrap().0);
+        let node_6 = krbtree.node(node_6_idx);
+        assert_eq!(6, node_6._kv.unwrap().0);
+        let node_7 = krbtree.node(node_7_idx);
+        assert_eq!(7, node_7._kv.unwrap().0);
+        let node_8 = krbtree.node(node_8_idx);
+        assert_eq!(8, node_8._kv.unwrap().0);
+
+        assert_eq!(true, root._parent.is_none());
+        assert_eq!(true, root._left.is_none());
+        assert_eq!(node_4_idx, root._right.unwrap());
+        assert_eq!(KRBTreeNodeColor::Black, root._color);
+
+        assert_eq!(root_idx, node_4._parent.unwrap());
+        assert_eq!(node_2_idx, node_4._left.unwrap());
+        assert_eq!(node_6_idx, node_4._right.unwrap());
+        assert_eq!(KRBTreeNodeColor::Black, node_4._color);
+
+        // Left sub-tree
+        {
+            assert_eq!(node_4_idx, node_2._parent.unwrap());
+            assert_eq!(node_1_idx, node_2._left.unwrap());
+            assert_eq!(node_3_idx, node_2._right.unwrap());
+            assert_eq!(KRBTreeNodeColor::Red, node_2._color);
+
+            assert_eq!(node_2_idx, node_1._parent.unwrap());
+            assert_eq!(true, node_1._left.is_none());
+            assert_eq!(true, node_1._right.is_none());
+            assert_eq!(KRBTreeNodeColor::Black, node_1._color);
+
+            assert_eq!(node_2_idx, node_3._parent.unwrap());
+            assert_eq!(true, node_3._left.is_none());
+            assert_eq!(true, node_3._right.is_none());
+            assert_eq!(KRBTreeNodeColor::Black, node_3._color);
+        }
+
+        // Right-sub-tree
+        {
+            
+            assert_eq!(node_4_idx, node_6._parent.unwrap());
+            assert_eq!(node_5_idx, node_6._left.unwrap());
+            assert_eq!(node_7_idx, node_6._right.unwrap());
+            assert_eq!(KRBTreeNodeColor::Red, node_6._color);
+
+            assert_eq!(node_6_idx, node_5._parent.unwrap());
+            assert_eq!(true, node_5._left.is_none());
+            assert_eq!(true, node_5._right.is_none());
+            assert_eq!(KRBTreeNodeColor::Black, node_5._color);
+
+            assert_eq!(node_6_idx, node_7._parent.unwrap());
+            assert_eq!(true, node_7._left.is_none());
+            assert_eq!(node_8_idx, node_7._right.unwrap());
+            assert_eq!(KRBTreeNodeColor::Black, node_7._color);
+
+            assert_eq!(node_7_idx, node_8._parent.unwrap());
+            assert_eq!(true, node_8._left.is_none());
+            assert_eq!(true, node_8._right.is_none());
+            assert_eq!(KRBTreeNodeColor::Red, node_8._color);
+        }
+    }
+
+    #[test]
+    fn test_krbtree_insert_8_to_1() {
+        let allocator = GlobalAllocator::new();
+        let mut krbtree = KRBTree::<usize, usize, GlobalAllocator>::new(&allocator, 4);
+
+        let elements: Vec<usize> = vec![8, 7, 6, 5, 4, 3, 2, 1];
+
+        for e in elements.iter() {
+            krbtree.insert(*e, *e);
+        }
+
+        let root_idx = NodeIdx::new(0);
+        let node_1_idx = NodeIdx::new(8);
+        let node_2_idx = NodeIdx::new(7);
+        let node_3_idx = NodeIdx::new(6);
+        let node_4_idx = NodeIdx::new(5);
+        let node_5_idx = NodeIdx::new(4);
+        let node_6_idx = NodeIdx::new(3);
+        let node_7_idx = NodeIdx::new(2);
+        let node_8_idx = NodeIdx::new(1);
+
+        let root = krbtree.node(root_idx);
+        assert_eq!(true, root._kv.is_none());
+        let node_1 = krbtree.node(node_1_idx);
+        assert_eq!(1, node_1._kv.unwrap().0);
+        let node_2 = krbtree.node(node_2_idx);
+        assert_eq!(2, node_2._kv.unwrap().0);
+        let node_3 = krbtree.node(node_3_idx);
+        assert_eq!(3, node_3._kv.unwrap().0);
+        let node_4 = krbtree.node(node_4_idx);
+        assert_eq!(4, node_4._kv.unwrap().0);
+        let node_5 = krbtree.node(node_5_idx);
+        assert_eq!(5, node_5._kv.unwrap().0);
+        let node_6 = krbtree.node(node_6_idx);
+        assert_eq!(6, node_6._kv.unwrap().0);
+        let node_7 = krbtree.node(node_7_idx);
+        assert_eq!(7, node_7._kv.unwrap().0);
+        let node_8 = krbtree.node(node_8_idx);
+        assert_eq!(8, node_8._kv.unwrap().0);
+
+        assert_eq!(true, root._parent.is_none());
+        assert_eq!(true, root._left.is_none());
+        assert_eq!(node_5_idx, root._right.unwrap());
+        assert_eq!(KRBTreeNodeColor::Black, root._color);
+
+        assert_eq!(root_idx, node_5._parent.unwrap());
+        assert_eq!(node_3_idx, node_5._left.unwrap());
+        assert_eq!(node_7_idx, node_5._right.unwrap());
+        assert_eq!(KRBTreeNodeColor::Black, node_5._color);
+
+        // Left sub-tree
+        {
+            assert_eq!(node_5_idx, node_3._parent.unwrap());
+            assert_eq!(node_2_idx, node_3._left.unwrap());
+            assert_eq!(node_4_idx, node_3._right.unwrap());
+            assert_eq!(KRBTreeNodeColor::Red, node_3._color);
+
+            assert_eq!(node_3_idx, node_2._parent.unwrap());
+            assert_eq!(node_1_idx, node_2._left.unwrap());
+            assert_eq!(true, node_2._right.is_none());
+            assert_eq!(KRBTreeNodeColor::Black, node_2._color);
+
+            assert_eq!(node_3_idx, node_4._parent.unwrap());
+            assert_eq!(true, node_4._left.is_none());
+            assert_eq!(true, node_4._right.is_none());
+            assert_eq!(KRBTreeNodeColor::Black, node_4._color);
+        }
+
+        // Right-sub-tree
+        {
+            
+            assert_eq!(node_5_idx, node_7._parent.unwrap());
+            assert_eq!(node_6_idx, node_7._left.unwrap());
+            assert_eq!(node_8_idx, node_7._right.unwrap());
+            assert_eq!(KRBTreeNodeColor::Red, node_7._color);
+
+            assert_eq!(node_7_idx, node_6._parent.unwrap());
+            assert_eq!(true, node_6._left.is_none());
+            assert_eq!(true, node_6._right.is_none());
+            assert_eq!(KRBTreeNodeColor::Black, node_6._color);
+
+            assert_eq!(node_7_idx, node_8._parent.unwrap());
+            assert_eq!(true, node_8._left.is_none());
+            assert_eq!(true, node_8._right.is_none());
+            assert_eq!(KRBTreeNodeColor::Black, node_8._color);
+
+            assert_eq!(node_7_idx, node_8._parent.unwrap());
+            assert_eq!(true, node_8._left.is_none());
+            assert_eq!(true, node_8._right.is_none());
+            assert_eq!(KRBTreeNodeColor::Black, node_8._color);
+        }
+    }
+
+    #[test]
+    fn test_krbtree_insert_get() {
+        let allocator = GlobalAllocator::new();
+        let mut krbtree = KRBTree::<usize, usize, GlobalAllocator>::new(&allocator, 4);
+        let elements_count = 1024;
+
+        for e in 0..elements_count {
+            krbtree.insert(e, e);
+        }
+
+        for e in 0..elements_count {
+            assert_eq!(e, *krbtree.get(e).unwrap());
+        }
+    }
+
     impl<'a, K : Hash + Ord + Debug, V : PartialEq + Debug, A : KAllocator> KRBTree<'a, K, V, A> {
-        fn dump_into_graphviz_dot_file(&self) {
+        fn dump_into_graphviz_dot_file(&self, filename: &str) {
             println!("dump_into_graphviz_dot_file");
             
             let mut graph_out = String::new();
@@ -842,8 +1180,16 @@ mod test {
 
             graph_out.push_str("}\n");
 
-            let mut file = File::create("output.dot").unwrap();
+            let mut file = File::create(format!("{}.dot", filename)).unwrap();
             write!(file, "{}", graph_out).unwrap();
+
+            Command::new("dot")
+               .arg("-Tpng")
+               .arg(format!("{}.dot", filename))
+               .arg("-o")
+               .arg(format!("{}.png", filename))
+               .spawn()
+               .expect("failed to execute command");
         }
 
         fn iterate_first<F>(&self, graph_out: &mut String, node_indices: Vec<NodeIdx>, f: &mut F)
