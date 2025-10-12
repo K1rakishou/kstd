@@ -30,7 +30,8 @@ struct KRBTreeNode<K : Debug + Hash + Ord, V : Debug + PartialEq> {
 }
 
 struct KRBTreeNodePool<'a, K : Debug + Hash + Ord, V : Debug + PartialEq, A : KAllocator> {
-    _nodes: KVec<'a, KRBTreeNode<K, V>, A>
+    _nodes: KVec<'a, KRBTreeNode<K, V>, A>,
+    _free_indices: KVec<'a, NodeIdx, A>
 }
 
 impl<'a, K : Debug + Hash + Ord, V : Debug + PartialEq, A : KAllocator> KRBTree<'a, K, V, A> {
@@ -107,7 +108,8 @@ impl<'a, K : Debug + Hash + Ord, V : Debug + PartialEq, A : KAllocator> KRBTree<
         if self._nodes.is_empty() {
             return 0;
         }
-        
+
+        // "-1" because we want to exclude the root
         return self._nodes.len() - 1;
     }
 
@@ -138,74 +140,78 @@ impl<'a, K : Debug + Hash + Ord, V : Debug + PartialEq, A : KAllocator> KRBTree<
     }
 
     fn insert_impl(&mut self, current_idx: NodeIdx, new_key: K, new_value: V, color: KRBTreeNodeColor) -> (NodeIdx, bool) {
-        debug_assert!(!self.is_root(current_idx));
+        let mut next_node_idx: Option<NodeIdx> = Some(current_idx);
 
-        let current_node = self.node(current_idx);
-        let Some(current_node_kv) = &current_node._kv else {
-            unreachable!();
-        };
+        while let Some (current_node_idx) = next_node_idx.take() {
+            debug_assert!(!self.is_root(current_node_idx));
 
-        let child_node_idx = match new_key.cmp(&current_node_kv.0) {
-            Ordering::Less => {
-                match self.node(current_idx)._left {
-                    Some(left_idx) => {
-                        if ENABLE_DEBUG_LOGS {
-                            println!("[insert_impl] going left");
-                        }
+            let current_node = self.node(current_node_idx);
+            let Some(current_node_kv) = &current_node._kv else {
+                unreachable!();
+            };
 
-                        left_idx
-                    },
-                    None => {
-                        if ENABLE_DEBUG_LOGS {
-                            println!("[insert_impl] found node at left child, current node: {:?}", current_node._kv);
-                        }
+            match new_key.cmp(&current_node_kv.0) {
+                Ordering::Less => {
+                    match self.node(current_node_idx)._left {
+                        Some(left_idx) => {
+                            if ENABLE_DEBUG_LOGS {
+                                println!("[insert_impl] going left");
+                            }
 
-                        let new_node_idx = self._pool.borrow(Some((new_key, new_value)), color);
+                            next_node_idx = Some(left_idx);
+                        },
+                        None => {
+                            if ENABLE_DEBUG_LOGS {
+                                println!("[insert_impl] found node at left child, current node: {:?}", current_node._kv);
+                            }
 
-                        self.node_mut(current_idx)._left = Some(new_node_idx);
-                        self.node_mut(new_node_idx)._parent = Some(current_idx);
-                
-                        return (new_node_idx, true);
-                    },
-                }
-            },
-            Ordering::Equal => {
-                // replace current node's value with the new one
-                let current_node = self.node_mut(current_idx);
-                current_node._kv.replace((new_key, new_value));
+                            let new_node_idx = self._pool.borrow(Some((new_key, new_value)), color);
 
-                if ENABLE_DEBUG_LOGS {
-                    println!("[insert_impl] keys are equal");
-                }
-            
-                return (current_idx, false);
-            },
-            Ordering::Greater => {
-                match self.node(current_idx)._right {
-                    Some(right_idx) => {
-                        if ENABLE_DEBUG_LOGS {
-                            println!("[insert_impl] going right");
-                        }
+                            self.node_mut(current_node_idx)._left = Some(new_node_idx);
+                            self.node_mut(new_node_idx)._parent = Some(current_node_idx);
 
-                        right_idx
-                    },
-                    None => {
-                        if ENABLE_DEBUG_LOGS {
-                            println!("[insert_impl] found node at right child, current node: {:?}", current_node._kv);
-                        }
+                            return (new_node_idx, true);
+                        },
+                    }
+                },
+                Ordering::Equal => {
+                    // replace current node's value with the new one
+                    let current_node = self.node_mut(current_node_idx);
+                    current_node._kv.replace((new_key, new_value));
 
-                        let new_node_idx = self._pool.borrow(Some((new_key, new_value)), color);
-                
-                        self.node_mut(current_idx)._right = Some(new_node_idx);
-                        self.node_mut(new_node_idx)._parent = Some(current_idx);
-                
-                        return (new_node_idx, true);
-                    },
-                }
-            },
-        };
+                    if ENABLE_DEBUG_LOGS {
+                        println!("[insert_impl] keys are equal");
+                    }
 
-        return self.insert_impl(child_node_idx, new_key, new_value, color);
+                    return (current_node_idx, false);
+                },
+                Ordering::Greater => {
+                    match self.node(current_node_idx)._right {
+                        Some(right_idx) => {
+                            if ENABLE_DEBUG_LOGS {
+                                println!("[insert_impl] going right");
+                            }
+
+                            next_node_idx = Some(right_idx);
+                        },
+                        None => {
+                            if ENABLE_DEBUG_LOGS {
+                                println!("[insert_impl] found node at right child, current node: {:?}", current_node._kv);
+                            }
+
+                            let new_node_idx = self._pool.borrow(Some((new_key, new_value)), color);
+
+                            self.node_mut(current_node_idx)._right = Some(new_node_idx);
+                            self.node_mut(new_node_idx)._parent = Some(current_node_idx);
+
+                            return (new_node_idx, true);
+                        },
+                    }
+                },
+            };
+        }
+
+        unreachable!();
     }
 
     fn rebalance(&mut self, inserted_node_idx: NodeIdx) {
@@ -468,23 +474,27 @@ impl<'a, K : Debug + Hash + Ord, V : Debug + PartialEq, A : KAllocator> KRBTree<
 impl<'a, K : Debug + Hash + Ord, V : Debug + PartialEq, A : KAllocator> KRBTreeNodePool<'a, K, V, A> {
     fn new(allocator: &'a A, capacity: usize) -> Self {
         return Self {
-            _nodes: KVec::with_capacity(allocator, capacity)
+            _nodes: KVec::with_capacity(allocator, capacity),
+            _free_indices: KVec::new(allocator)
         };
     }
 
     fn borrow(&mut self, kv: Option<(K, V)>, color: KRBTreeNodeColor) -> NodeIdx {
-        return match self._nodes.iter_mut().position(|node| !node._borrowed) {
-            Some(position) => {
-                self._nodes[position]._borrowed = true;
-                self._nodes[position]._kv = kv;
-                NodeIdx::new(position)
-            },
-            None => {
-                let node_idx = self._nodes.len();
-                self._nodes.push(KRBTreeNode::new(kv, color));
-                NodeIdx::new(node_idx)
-            },
-        };
+        if let Some(free_node_idx) = self._free_indices.pop() {
+            debug_assert!(self._nodes[free_node_idx.0]._borrowed == false);
+
+            self._nodes[free_node_idx.0]._borrowed = true;
+            self._nodes[free_node_idx.0]._kv = kv;
+            return free_node_idx;
+        }
+
+        let node_idx = self._nodes.len();
+        self._nodes.push(KRBTreeNode::new(kv, color));
+        return NodeIdx::new(node_idx);
+    }
+
+    fn release(&mut self, idx: NodeIdx) {
+        todo!()
     }
 
     #[inline]
@@ -537,6 +547,7 @@ impl NodeIdx {
 
 #[allow(unused_imports, dead_code)]
 mod test {
+    use std::arch::x86_64::__rdtscp;
     use std::process::Command;
     use std::{fmt::Debug, fs::File, hash::Hash};
     use std::io::Write;
