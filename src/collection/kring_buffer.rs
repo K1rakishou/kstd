@@ -176,6 +176,7 @@ impl<'allocator, T, A : KAllocator> Drop for KRingBuffer<'allocator, T, A> {
 
         self._length = 0;
         self._capacity = 0;
+        self._index = 0;
     }
 }
 
