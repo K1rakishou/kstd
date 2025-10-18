@@ -387,6 +387,7 @@ mod test {
         assert!(khashmap.remove(&123345).is_none());
     }
 
+    #[cfg(not(miri))]
     #[test]
     fn khashmap_ensure_buckets_are_resized_correctly() {
         let allocator = KGlobalAllocator::new();
@@ -430,6 +431,7 @@ mod test {
         assert_eq!(4, khashmap._bucket_array._buckets.len());
     }
 
+    #[cfg(not(miri))]
     #[test]
     fn khashmap_test_custom_load_factor() {
         let allocator = KGlobalAllocator::new();
