@@ -9,14 +9,14 @@ enum ResizeMode {
     Down
 }
 
-pub struct KHashMap<'a, K : Hash + PartialEq, V : PartialEq, A : KAllocator, BH : BuildHasher = RandomState> {
-    _allocator: &'a A,
-    _buckets: KBuckets<'a, K, V, A, BH>,
+pub struct KHashMap<'allocator, K : Hash + PartialEq, V : PartialEq, A : KAllocator, BH : BuildHasher = RandomState> {
+    _allocator: &'allocator A,
+    _buckets: KBuckets<'allocator, K, V, A, BH>,
 }
 
 #[allow(dead_code)]
-impl<'a, K : Hash + PartialEq, V : PartialEq, A : KAllocator> KHashMap<'a, K, V, A, RandomState> {
-    pub fn new(allocator: &'a A) -> Self {
+impl<'allocator, K : Hash + PartialEq, V : PartialEq, A : KAllocator> KHashMap<'allocator, K, V, A, RandomState> {
+    pub fn new(allocator: &'allocator A) -> Self {
         return Self {
             _allocator: allocator,
             _buckets: KBuckets::new(allocator),
@@ -40,16 +40,16 @@ impl<'a, K : Hash + PartialEq, V : PartialEq, A : KAllocator> KHashMap<'a, K, V,
     }
 }
 
-struct KBuckets<'a, K : Hash + PartialEq, V : PartialEq, A : KAllocator, BH : BuildHasher> {
-    _allocator: &'a A,
-    _buckets: KVec<'a, KBucket<'a, K, V, A>, A>,
+struct KBuckets<'allocator, K : Hash + PartialEq, V : PartialEq, A : KAllocator, BH : BuildHasher> {
+    _allocator: &'allocator A,
+    _buckets: KVec<'allocator, KBucket<'allocator, K, V, A>, A>,
     _count: usize,
     _build_hasher: BH
 }
 
 #[allow(dead_code)]
-impl<'a, K : Hash + PartialEq, V : PartialEq, A : KAllocator> KBuckets<'a, K, V, A, RandomState> {
-    fn new(allocator: &'a A) -> Self {
+impl<'allocator, K : Hash + PartialEq, V : PartialEq, A : KAllocator> KBuckets<'allocator, K, V, A, RandomState> {
+    fn new(allocator: &'allocator A) -> Self {
         return Self {
             _allocator: allocator,
             _buckets: KVec::new(allocator),
@@ -99,7 +99,7 @@ impl<'a, K : Hash + PartialEq, V : PartialEq, A : KAllocator> KBuckets<'a, K, V,
         todo!()
     }
     
-    fn get_bucket(&self, index: usize) -> Option<&KBucket<'a, K, V, A>> {
+    fn get_bucket(&self, index: usize) -> Option<&KBucket<'allocator, K, V, A>> {
         if index >= self._count {
             return None;
         }
@@ -107,7 +107,7 @@ impl<'a, K : Hash + PartialEq, V : PartialEq, A : KAllocator> KBuckets<'a, K, V,
         return Some(&self._buckets[index]);
     }
 
-    fn get_bucket_mut(&mut self, index: usize) -> Option<&mut KBucket<'a, K, V, A>> {
+    fn get_bucket_mut(&mut self, index: usize) -> Option<&mut KBucket<'allocator, K, V, A>> {
         if index >= self._count {
             return None;
         }
@@ -125,7 +125,7 @@ impl<'a, K : Hash + PartialEq, V : PartialEq, A : KAllocator> KBuckets<'a, K, V,
             return;
         }
         
-        let mut new_buckets = KVec::<'a, KBucket<'a, K, V, A>, A>::with_capacity(self._allocator, new_buckets_len);
+        let mut new_buckets = KVec::<'allocator, KBucket<'allocator, K, V, A>, A>::with_capacity(self._allocator, new_buckets_len);
         for _ in 0 .. new_buckets_len {
             new_buckets.push(KBucket::new(self._allocator));
         }
@@ -178,7 +178,7 @@ impl<'a, K : Hash + PartialEq, V : PartialEq, A : KAllocator> KBuckets<'a, K, V,
         return n / m;
     }
 
-    fn iter<'buckets>(&'buckets self) -> KBucketsIter<'a,'buckets, K, V, A> {
+    fn iter<'buckets>(&'buckets self) -> KBucketsIter<'allocator,'buckets, K, V, A> {
         return KBucketsIter::new(&self._buckets, self._count);
     }
 
@@ -189,14 +189,14 @@ impl<'a, K : Hash + PartialEq, V : PartialEq, A : KAllocator> KBuckets<'a, K, V,
     }
 }
 
-struct KBucketsIter<'a, 'buckets, K : Hash + PartialEq, V : PartialEq, A : KAllocator>  {
+struct KBucketsIter<'allocator, 'buckets, K : Hash + PartialEq, V : PartialEq, A : KAllocator>  {
     _index: usize,
     _count: usize,
-    _buckets: &'buckets KVec<'a, KBucket<'a, K, V, A>, A>
+    _buckets: &'buckets KVec<'allocator, KBucket<'allocator, K, V, A>, A>
 }
 
-impl<'a, 'buckets, K : Hash + PartialEq, V : PartialEq, A : KAllocator> KBucketsIter<'a, 'buckets, K, V, A> {
-    fn new(buckets: &'buckets KVec<'a, KBucket<'a, K, V, A>, A>, count: usize) -> Self {
+impl<'allocator, 'buckets, K : Hash + PartialEq, V : PartialEq, A : KAllocator> KBucketsIter<'allocator, 'buckets, K, V, A> {
+    fn new(buckets: &'buckets KVec<'allocator, KBucket<'allocator, K, V, A>, A>, count: usize) -> Self {
         return Self {
             _index: 0,
             _count: count,
@@ -205,8 +205,8 @@ impl<'a, 'buckets, K : Hash + PartialEq, V : PartialEq, A : KAllocator> KBuckets
     }
 }
 
-impl<'a, 'buckets, K : Hash + PartialEq, V : PartialEq, A : KAllocator> Iterator for KBucketsIter<'a, 'buckets, K, V, A> {
-    type Item = &'buckets KBucket<'a, K, V, A>;
+impl<'allocator, 'buckets, K : Hash + PartialEq, V : PartialEq, A : KAllocator> Iterator for KBucketsIter<'allocator, 'buckets, K, V, A> {
+    type Item = &'buckets KBucket<'allocator, K, V, A>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let index = self._index;
@@ -219,13 +219,13 @@ impl<'a, 'buckets, K : Hash + PartialEq, V : PartialEq, A : KAllocator> Iterator
     }
 }
 
-struct KBucket<'a, K : Hash + PartialEq, V : PartialEq, A : KAllocator> {
-    _kvs: KVec<'a, Option<(K, V)>, A>
+struct KBucket<'allocator, K : Hash + PartialEq, V : PartialEq, A : KAllocator> {
+    _kvs: KVec<'allocator, Option<(K, V)>, A>
 }
 
 #[allow(dead_code)]
-impl<'a, K : Hash + PartialEq, V : PartialEq, A : KAllocator> KBucket<'a, K, V, A> {
-    fn new(allocator: &'a A) -> Self {
+impl<'allocator, K : Hash + PartialEq, V : PartialEq, A : KAllocator> KBucket<'allocator, K, V, A> {
+    fn new(allocator: &'allocator A) -> Self {
         return Self {
             _kvs: KVec::new(allocator)
         };
@@ -279,12 +279,12 @@ impl<'a, K : Hash + PartialEq, V : PartialEq, A : KAllocator> KBucket<'a, K, V, 
 
 #[allow(unused_imports)]
 mod test {
-    use crate::{alloc::global::GlobalAllocator, collection::khashmap::KHashMap};
+    use crate::{alloc::kglobal_allocator::KGlobalAllocator, collection::khashmap::KHashMap};
 
     #[test]
     fn khashmap_insert() {
-        let allocator = GlobalAllocator::new();
-        let mut khashmap = KHashMap::<u64, u64, GlobalAllocator>::new(&allocator);
+        let allocator = KGlobalAllocator::new();
+        let mut khashmap = KHashMap::<u64, u64, KGlobalAllocator>::new(&allocator);
 
         khashmap.insert(1, 1);
         assert_eq!(1, *khashmap.get(&1).unwrap());
@@ -304,8 +304,8 @@ mod test {
 
     #[test]
     fn khashmap_remove() {
-        let allocator = GlobalAllocator::new();
-        let mut khashmap = KHashMap::<u64, u64, GlobalAllocator>::new(&allocator);
+        let allocator = KGlobalAllocator::new();
+        let mut khashmap = KHashMap::<u64, u64, KGlobalAllocator>::new(&allocator);
 
         khashmap.insert(1, 1);
         khashmap.insert(123, 321);

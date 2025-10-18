@@ -13,10 +13,10 @@ enum KRBTreeNodeColor {
     Black
 }
 
-pub struct KRBTree<'a, K : Debug + Hash + Ord, V : Debug + PartialEq, A : KAllocator> {
-    _allocator: &'a A,
-    _pool: KRBTreeNodePool<'a, K, V, A>,
-    _nodes: KVec<'a, NodeIdx, A>
+pub struct KRBTree<'allocator, K : Debug + Hash + Ord, V : Debug + PartialEq, A : KAllocator> {
+    _allocator: &'allocator A,
+    _pool: KRBTreeNodePool<'allocator, K, V, A>,
+    _nodes: KVec<'allocator, NodeIdx, A>
 }
 
 #[derive(Debug)]
@@ -29,13 +29,13 @@ struct KRBTreeNode<K : Debug + Hash + Ord, V : Debug + PartialEq> {
     _borrowed: bool
 }
 
-struct KRBTreeNodePool<'a, K : Debug + Hash + Ord, V : Debug + PartialEq, A : KAllocator> {
-    _nodes: KVec<'a, KRBTreeNode<K, V>, A>,
-    _free_indices: KVec<'a, NodeIdx, A>
+struct KRBTreeNodePool<'allocator, K : Debug + Hash + Ord, V : Debug + PartialEq, A : KAllocator> {
+    _nodes: KVec<'allocator, KRBTreeNode<K, V>, A>,
+    _free_indices: KVec<'allocator, NodeIdx, A>
 }
 
-impl<'a, K : Debug + Hash + Ord, V : Debug + PartialEq, A : KAllocator> KRBTree<'a, K, V, A> {
-    pub fn new(allocator: &'a A, capacity: usize) -> Self {
+impl<'allocator, K : Debug + Hash + Ord, V : Debug + PartialEq, A : KAllocator> KRBTree<'allocator, K, V, A> {
+    pub fn new(allocator: &'allocator A, capacity: usize) -> Self {
         return Self {
             _allocator: allocator,
             _pool: KRBTreeNodePool::new(allocator, capacity),
@@ -471,8 +471,8 @@ impl<'a, K : Debug + Hash + Ord, V : Debug + PartialEq, A : KAllocator> KRBTree<
     
 }
 
-impl<'a, K : Debug + Hash + Ord, V : Debug + PartialEq, A : KAllocator> KRBTreeNodePool<'a, K, V, A> {
-    fn new(allocator: &'a A, capacity: usize) -> Self {
+impl<'allocator, K : Debug + Hash + Ord, V : Debug + PartialEq, A : KAllocator> KRBTreeNodePool<'allocator, K, V, A> {
+    fn new(allocator: &'allocator A, capacity: usize) -> Self {
         return Self {
             _nodes: KVec::with_capacity(allocator, capacity),
             _free_indices: KVec::new(allocator)
@@ -551,7 +551,7 @@ mod test {
     use std::process::Command;
     use std::{fmt::Debug, fs::File, hash::Hash};
     use std::io::Write;
-    use crate::{alloc::{global::GlobalAllocator, kallocator::KAllocator}, collection::krbtree::{KRBTree, KRBTreeNode, KRBTreeNodeColor, NodeIdx}};
+    use crate::{alloc::{kglobal_allocator::KGlobalAllocator, kallocator::KAllocator}, collection::krbtree::{KRBTree, KRBTreeNode, KRBTreeNodeColor, NodeIdx}};
 
     ///      Before rotation
     ///            11
@@ -567,8 +567,8 @@ mod test {
     /// 
     #[test]
     fn test_krbtree_insert_right_outer_case() {
-        let allocator = GlobalAllocator::new();
-        let mut krbtree = KRBTree::<usize, usize, GlobalAllocator>::new(&allocator, 4);
+        let allocator = KGlobalAllocator::new();
+        let mut krbtree = KRBTree::<usize, usize, KGlobalAllocator>::new(&allocator, 4);
 
         let elements: Vec<usize> = vec![11, 5, 2];
 
@@ -625,8 +625,8 @@ mod test {
     /// 
     #[test]
     fn test_krbtree_insert_left_rotation_outer_case() {
-        let allocator = GlobalAllocator::new();
-        let mut krbtree = KRBTree::<usize, usize, GlobalAllocator>::new(&allocator, 4);
+        let allocator = KGlobalAllocator::new();
+        let mut krbtree = KRBTree::<usize, usize, KGlobalAllocator>::new(&allocator, 4);
 
         let elements: Vec<usize> = vec![2, 5, 11];
 
@@ -683,8 +683,8 @@ mod test {
     /// 
     #[test]
     fn test_krbtree_insert_left_right_rotation_inner_case() {
-        let allocator = GlobalAllocator::new();
-        let mut krbtree = KRBTree::<usize, usize, GlobalAllocator>::new(&allocator, 4);
+        let allocator = KGlobalAllocator::new();
+        let mut krbtree = KRBTree::<usize, usize, KGlobalAllocator>::new(&allocator, 4);
 
         let elements: Vec<usize> = vec![11, 5, 7];
 
@@ -741,8 +741,8 @@ mod test {
     /// 
     #[test]
     fn test_krbtree_insert_right_left_rotation_inner_case() {
-        let allocator = GlobalAllocator::new();
-        let mut krbtree = KRBTree::<usize, usize, GlobalAllocator>::new(&allocator, 4);
+        let allocator = KGlobalAllocator::new();
+        let mut krbtree = KRBTree::<usize, usize, KGlobalAllocator>::new(&allocator, 4);
 
         let elements: Vec<usize> = vec![11, 17, 13];
 
@@ -802,8 +802,8 @@ mod test {
     ///        50  60
     #[test]
     fn test_krbtree_insert_left_right_under_left_child_of_parent() {
-        let allocator = GlobalAllocator::new();
-        let mut krbtree = KRBTree::<usize, usize, GlobalAllocator>::new(&allocator, 4);
+        let allocator = KGlobalAllocator::new();
+        let mut krbtree = KRBTree::<usize, usize, KGlobalAllocator>::new(&allocator, 4);
 
         let elements: Vec<usize> = vec![100, 60, 140, 50, 55];
 
@@ -879,8 +879,8 @@ mod test {
     ///             140 150   
     #[test]
     fn test_krbtree_insert_right_left_under_right_child_of_parent() {
-        let allocator = GlobalAllocator::new();
-        let mut krbtree = KRBTree::<usize, usize, GlobalAllocator>::new(&allocator, 4);
+        let allocator = KGlobalAllocator::new();
+        let mut krbtree = KRBTree::<usize, usize, KGlobalAllocator>::new(&allocator, 4);
 
         let elements: Vec<usize> = vec![100, 60, 140, 150, 145];
 
@@ -941,8 +941,8 @@ mod test {
 
     #[test]
     fn test_krbtree_insert_1_to_8() {
-        let allocator = GlobalAllocator::new();
-        let mut krbtree = KRBTree::<usize, usize, GlobalAllocator>::new(&allocator, 4);
+        let allocator = KGlobalAllocator::new();
+        let mut krbtree = KRBTree::<usize, usize, KGlobalAllocator>::new(&allocator, 4);
 
         let elements: Vec<usize> = vec![1, 2, 3, 4, 5, 6, 7, 8];
 
@@ -1034,8 +1034,8 @@ mod test {
 
     #[test]
     fn test_krbtree_insert_8_to_1() {
-        let allocator = GlobalAllocator::new();
-        let mut krbtree = KRBTree::<usize, usize, GlobalAllocator>::new(&allocator, 4);
+        let allocator = KGlobalAllocator::new();
+        let mut krbtree = KRBTree::<usize, usize, KGlobalAllocator>::new(&allocator, 4);
 
         let elements: Vec<usize> = vec![8, 7, 6, 5, 4, 3, 2, 1];
 
@@ -1127,8 +1127,8 @@ mod test {
 
     #[test]
     fn test_krbtree_insert_get() {
-        let allocator = GlobalAllocator::new();
-        let mut krbtree = KRBTree::<usize, usize, GlobalAllocator>::new(&allocator, 4);
+        let allocator = KGlobalAllocator::new();
+        let mut krbtree = KRBTree::<usize, usize, KGlobalAllocator>::new(&allocator, 4);
         let elements_count = 1024;
 
         for e in 0..elements_count {
@@ -1140,7 +1140,7 @@ mod test {
         }
     }
 
-    impl<'a, K : Hash + Ord + Debug, V : PartialEq + Debug, A : KAllocator> KRBTree<'a, K, V, A> {
+    impl<'allocator, K : Hash + Ord + Debug, V : PartialEq + Debug, A : KAllocator> KRBTree<'allocator, K, V, A> {
         fn dump_into_graphviz_dot_file(&self, filename: &str) {
             println!("dump_into_graphviz_dot_file");
             
@@ -1205,7 +1205,7 @@ mod test {
 
         fn iterate_first<F>(&self, graph_out: &mut String, node_indices: Vec<NodeIdx>, f: &mut F)
         where
-            F : FnMut(&KRBTree<'a, K, V, A>, &mut String, Option<NodeIdx>, &KRBTreeNode<K, V>) -> ()
+            F : FnMut(&KRBTree<'allocator, K, V, A>, &mut String, Option<NodeIdx>, &KRBTreeNode<K, V>) -> ()
         {
             let mut node_sibling_indexes = Vec::new();
             
@@ -1233,7 +1233,7 @@ mod test {
 
         fn iterate_second<F>(&self, graph_out: &mut String, node_index: NodeIdx, f: &mut F)
         where
-            F : FnMut(&KRBTree<'a, K, V, A>, &mut String, NodeIdx, Option<NodeIdx>) -> ()
+            F : FnMut(&KRBTree<'allocator, K, V, A>, &mut String, NodeIdx, Option<NodeIdx>) -> ()
         {
             let node = self.node(node_index);
 

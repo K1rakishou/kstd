@@ -1,6 +1,6 @@
 use crate::alloc::{kallocator::KAllocator, kstring::KString};
 
-pub fn kformatln_args_fn<'a, A: KAllocator>(allocator: &'a A, add_new_line: bool, args: core::fmt::Arguments<'_>) -> KString<'a, A> {
+pub fn kformatln_args_fn<'allocator, A: KAllocator>(allocator: &'allocator A, add_new_line: bool, args: core::fmt::Arguments<'_>) -> KString<'allocator, A> {
     // TODO: use estimated_capacity once it's stable
     // let cap = args.estimated_capacity();
     
@@ -19,12 +19,12 @@ pub fn kformatln_args_fn<'a, A: KAllocator>(allocator: &'a A, add_new_line: bool
 }
 
 #[allow(dead_code)]
-pub fn kformat_fn<'a, A: KAllocator>(allocator: &'a A, args: core::fmt::Arguments<'_>) -> KString<'a, A> {
+pub fn kformat_fn<'allocator, A: KAllocator>(allocator: &'allocator A, args: core::fmt::Arguments<'_>) -> KString<'allocator, A> {
     return kformatln_args_fn(allocator, false, args);
 }
 
 #[allow(dead_code)]
-pub fn kformatln_fn<'a, A: KAllocator>(allocator: &'a A, args: core::fmt::Arguments<'_>) -> KString<'a, A> {
+pub fn kformatln_fn<'allocator, A: KAllocator>(allocator: &'allocator A, args: core::fmt::Arguments<'_>) -> KString<'allocator, A> {
     return kformatln_args_fn(allocator, true, args);
 }
 
@@ -44,11 +44,11 @@ macro_rules! kformatln {
 
 #[allow(unused_imports)]
 mod test {
-    use crate::alloc::global::GlobalAllocator;
+    use crate::alloc::kglobal_allocator::KGlobalAllocator;
 
     #[test]
     fn test_kformat() {
-        let allocator = GlobalAllocator::new();
+        let allocator = KGlobalAllocator::new();
         let result_string = kformat!(&allocator, "Hello, {}! Pi: {}", "World", 3.1415);
         assert_eq!("Hello, World! Pi: 3.1415", result_string.as_str());
     }
@@ -64,7 +64,7 @@ mod test {
             }
         }
         
-        let allocator = GlobalAllocator::new();
+        let allocator = KGlobalAllocator::new();
         let _ = kformat!(&allocator, "Hello, {}", Test{});
     }
     

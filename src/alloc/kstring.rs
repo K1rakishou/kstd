@@ -2,35 +2,35 @@ use std::{ops::{Index, IndexMut}, str::Utf8Error};
 
 use crate::{alloc::kallocator::KAllocator, collection::kvec::KVec};
 
-pub struct KString<'a, A : KAllocator> {
-    _allocator: &'a A,
-    _vec: KVec<'a, u8, A>
+pub struct KString<'allocator, A : KAllocator> {
+    _allocator: &'allocator A,
+    _vec: KVec<'allocator, u8, A>
 }
 
 #[derive(Debug)]
 #[allow(dead_code)]
-pub struct KFromUtf8Error<'a, A : KAllocator> {
-    bytes: KVec<'a, u8, A>,
+pub struct KFromUtf8Error<'allocator, A : KAllocator> {
+    bytes: KVec<'allocator, u8, A>,
     error: Utf8Error,
 }
 
 #[allow(dead_code)]
-impl<'a, A : KAllocator> KString<'a, A> {
-    pub fn new(allocator: &'a A) -> Self {
+impl<'allocator, A : KAllocator> KString<'allocator, A> {
+    pub fn new(allocator: &'allocator A) -> Self {
         return Self {
             _allocator: allocator,
             _vec: KVec::new(allocator)
         }
     }
 
-    pub fn with_capacity(allocator: &'a A, capacity: usize) -> Self {
+    pub fn with_capacity(allocator: &'allocator A, capacity: usize) -> Self {
         return Self {
             _allocator: allocator,
             _vec: KVec::with_capacity(allocator, capacity)
         }
     }
 
-    pub fn from_str(allocator: &'a A, s: &str) -> Result<Self, KFromUtf8Error<'a, A>> {
+    pub fn from_str(allocator: &'allocator A, s: &str) -> Result<Self, KFromUtf8Error<'allocator, A>> {
         let kvec = {
             let mut kvec: KVec<u8, A> = KVec::with_capacity(allocator, s.len());
 
@@ -73,7 +73,7 @@ impl<'a, A : KAllocator> KString<'a, A> {
     }
 }
 
-impl<'a, A : KAllocator> Index<usize> for KString<'a, A> {
+impl<'allocator, A : KAllocator> Index<usize> for KString<'allocator, A> {
     type Output = u8;
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -81,13 +81,13 @@ impl<'a, A : KAllocator> Index<usize> for KString<'a, A> {
     }
 }
 
-impl<'a, A : KAllocator> IndexMut<usize> for KString<'a, A> {
+impl<'allocator, A : KAllocator> IndexMut<usize> for KString<'allocator, A> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         &mut self._vec[index]
     }
 }
 
-impl<'a, A : KAllocator> core::fmt::Write for KString<'a, A> {
+impl<'allocator, A : KAllocator> core::fmt::Write for KString<'allocator, A> {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
         self.push_str(s);
         Ok(())
@@ -103,11 +103,11 @@ impl<'a, A : KAllocator> core::fmt::Write for KString<'a, A> {
 
 #[allow(unused_imports)]
 mod test {
-    use crate::alloc::{global::GlobalAllocator, kstring::KString};
+    use crate::alloc::{kglobal_allocator::KGlobalAllocator, kstring::KString};
 
     #[test]
     fn kstring_push() {
-        let allocator = GlobalAllocator::new();
+        let allocator = KGlobalAllocator::new();
         let mut kstring = KString::new(&allocator);
 
         kstring.push(b'H');
@@ -124,7 +124,7 @@ mod test {
 
     #[test]
     fn kstring_from_str() {
-        let allocator = GlobalAllocator::new();
+        let allocator = KGlobalAllocator::new();
         let kstring = KString::from_str(&allocator, "Hello, World!").unwrap();
 
         assert_eq!(13, kstring.len());

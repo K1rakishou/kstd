@@ -2,12 +2,12 @@ use core::alloc::{Layout};
 use crate::alloc::{kallocator::KAllocator};
 
 #[derive(Debug)]
-pub struct GlobalAllocator {
+pub struct KGlobalAllocator {
     
 }
 
 #[allow(dead_code)]
-impl GlobalAllocator {
+impl KGlobalAllocator {
     pub fn new() -> Self {
         return Self {
             
@@ -15,7 +15,7 @@ impl GlobalAllocator {
     }
 }
 
-impl KAllocator for GlobalAllocator {
+impl KAllocator for KGlobalAllocator {
     fn allocate(&self, layout: Layout) -> Option<*mut u8> {
         let raw_ptr = unsafe { std::alloc::alloc(layout) };
         if raw_ptr.is_null() {

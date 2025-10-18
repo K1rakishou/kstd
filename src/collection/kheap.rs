@@ -9,23 +9,23 @@ pub enum HeapType {
 }
 
 #[allow(dead_code)]
-pub struct Heap<'a, T : PartialOrd, A : KAllocator> {
-    _allocator: &'a A,
-    _elements: KVec<'a, T, A>,
+pub struct KHeap<'allocator, T : PartialOrd, A : KAllocator> {
+    _allocator: &'allocator A,
+    _elements: KVec<'allocator, T, A>,
     _type: HeapType
 }
 
 #[allow(dead_code)]
-impl<'a, T : PartialOrd, A : KAllocator> Heap<'a, T, A> {
-    pub fn min(allocator: &'a A) -> Self {
+impl<'allocator, T : PartialOrd, A : KAllocator> KHeap<'allocator, T, A> {
+    pub fn min(allocator: &'allocator A) -> Self {
         return Self::new(allocator, HeapType::Min);
     }
 
-    pub fn max(allocator: &'a A) -> Self {
+    pub fn max(allocator: &'allocator A) -> Self {
         return Self::new(allocator, HeapType::Max);
     }
 
-    pub fn new(allocator: &'a A, ty: HeapType) -> Self {
+    pub fn new(allocator: &'allocator A, ty: HeapType) -> Self {
         let elements = KVec::<T, A>::new(allocator);
         
         return Self {
@@ -180,14 +180,14 @@ impl<'a, T : PartialOrd, A : KAllocator> Heap<'a, T, A> {
 
 #[allow(unused_imports)]
 mod tests {
-    use crate::alloc::{kallocator::KAllocator, global::GlobalAllocator};
-    use super::Heap;
+    use crate::alloc::{kallocator::KAllocator, kglobal_allocator::KGlobalAllocator};
+    use super::KHeap;
     use std::fmt::Debug;
 
     #[test]
     fn test_min_heap() {
-        let allocator = GlobalAllocator::new();
-        let mut heap = Heap::<usize, GlobalAllocator>::min(&allocator);
+        let allocator = KGlobalAllocator::new();
+        let mut heap = KHeap::<usize, KGlobalAllocator>::min(&allocator);
         heap.push(9);
         heap.push(7);
         heap.push(8);
@@ -212,8 +212,8 @@ mod tests {
 
     #[test]
     fn test_max_heap() {
-        let allocator = GlobalAllocator::new();
-        let mut heap = Heap::<usize, GlobalAllocator>::max(&allocator);
+        let allocator = KGlobalAllocator::new();
+        let mut heap = KHeap::<usize, KGlobalAllocator>::max(&allocator);
         heap.push(9);
         heap.push(7);
         heap.push(8);
@@ -236,7 +236,7 @@ mod tests {
         assert!(heap.pop().is_none());
     }
 
-    impl<'a, T : PartialOrd + Debug, A : KAllocator> Heap<'a, T, A> {
+    impl<'allocator, T : PartialOrd + Debug, A : KAllocator> KHeap<'allocator, T, A> {
         #[allow(dead_code)]
         fn print_heap(&self) {
             for (index, element) in self._elements.iter().enumerate() {

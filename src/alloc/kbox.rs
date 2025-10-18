@@ -1,14 +1,14 @@
 use core::{alloc::Layout, any::type_name, ops::{Deref, DerefMut}, ptr::NonNull};
 use crate::alloc::kallocator::KAllocator;
 
-pub struct KBox<'a, T, A : KAllocator> {
-    _allocator: &'a A,
+pub struct KBox<'allocator, T, A : KAllocator> {
+    _allocator: &'allocator A,
     ptr: NonNull<T>
 }
 
 #[allow(dead_code)]
-impl<'a, T, A : KAllocator> KBox<'a, T, A> {
-    pub fn new(allocator: &'a A, value: T) -> Self {
+impl<'allocator, T, A : KAllocator> KBox<'allocator, T, A> {
+    pub fn new(allocator: &'allocator A, value: T) -> Self {
         unsafe {
             let layout = Layout::new::<T>();
             let Some(ptr) = allocator.allocate(layout) else {
@@ -30,7 +30,7 @@ impl<'a, T, A : KAllocator> KBox<'a, T, A> {
     }
 }
 
-impl<'a, T, A : KAllocator> Drop for KBox<'a, T, A> {
+impl<'allocator, T, A : KAllocator> Drop for KBox<'allocator, T, A> {
     fn drop(&mut self) {
         unsafe {
             core::ptr::drop_in_place(self.as_ptr());
@@ -41,7 +41,7 @@ impl<'a, T, A : KAllocator> Drop for KBox<'a, T, A> {
     }
 }
 
-impl<'a, T, A : KAllocator> Deref for KBox<'a, T, A> {
+impl<'allocator, T, A : KAllocator> Deref for KBox<'allocator, T, A> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -49,7 +49,7 @@ impl<'a, T, A : KAllocator> Deref for KBox<'a, T, A> {
     }
 }
 
-impl<'a, T, A : KAllocator> DerefMut for KBox<'a, T, A> {
+impl<'allocator, T, A : KAllocator> DerefMut for KBox<'allocator, T, A> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         unsafe { &mut *self.as_ptr() }
     }
@@ -58,11 +58,11 @@ impl<'a, T, A : KAllocator> DerefMut for KBox<'a, T, A> {
 #[allow(unused_imports)]
 mod test {
     use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
-    use crate::alloc::{global::GlobalAllocator, kbox::KBox};
+    use crate::alloc::{kglobal_allocator::KGlobalAllocator, kbox::KBox};
 
     #[test]
     fn test_kbox_drop_is_called() {
-        let allocator = GlobalAllocator::new();
+        let allocator = KGlobalAllocator::new();
         let dropflag = Arc::new(AtomicBool::new(false));
         struct MustBeDropped(Arc<AtomicBool>);
         

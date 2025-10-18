@@ -4,16 +4,16 @@ use std::cmp::Ordering;
 
 use crate::{alloc::kallocator::KAllocator, collection::layout_from_capacity};
 
-pub struct KVec<'a, T, A : KAllocator> {
-    _allocator: &'a A,
+pub struct KVec<'allocator, T, A : KAllocator> {
+    _allocator: &'allocator A,
     _buffer: NonNull<T>,
     _capacity: usize,
     _length: usize
 }
 
 #[allow(dead_code)]
-impl<'a, T, A : KAllocator> KVec<'a, T, A> {
-    pub fn new(allocator: &'a A) -> Self {
+impl<'allocator, T, A : KAllocator> KVec<'allocator, T, A> {
+    pub fn new(allocator: &'allocator A) -> Self {
         return Self {
             _allocator: allocator,
             _buffer: NonNull::dangling(),
@@ -22,7 +22,7 @@ impl<'a, T, A : KAllocator> KVec<'a, T, A> {
         }
     }
 
-    pub fn with_capacity(allocator: &'a A, capacity: usize) -> Self {
+    pub fn with_capacity(allocator: &'allocator A, capacity: usize) -> Self {
         let (new_buffer, new_capacity) = Self::grow(allocator, NonNull::dangling(), capacity, 0, 0);
         let this = Self {
             _allocator: allocator,
@@ -34,7 +34,7 @@ impl<'a, T, A : KAllocator> KVec<'a, T, A> {
         return this;
     }
 
-    pub fn from_slice(allocator: &'a A, slice: &[T]) -> Self {
+    pub fn from_slice(allocator: &'allocator A, slice: &[T]) -> Self {
         let (new_buffer, new_capacity) = Self::grow(allocator, NonNull::dangling(), slice.len(), 0, 0);
         let mut this = Self {
             _allocator: allocator,
@@ -234,7 +234,7 @@ impl<'a, T, A : KAllocator> KVec<'a, T, A> {
         return self._buffer.as_ptr() as *const T;
     }
 
-    fn grow(allocator: &'a A, buffer: NonNull<T>, old_capacity: usize, additional: usize, length: usize) -> (NonNull<T>, usize) {
+    fn grow(allocator: &'allocator A, buffer: NonNull<T>, old_capacity: usize, additional: usize, length: usize) -> (NonNull<T>, usize) {
         let elem_size = core::mem::size_of::<T>();
         let elem_align = core::mem::align_of::<T>();
 
@@ -297,7 +297,36 @@ impl<'a, T, A : KAllocator> KVec<'a, T, A> {
     }
 }
 
-impl<'a, T, A : KAllocator> Drop for KVec<'a, T, A> {
+impl<'allocator, T : Clone, A : KAllocator> KVec<'allocator, T, A> {
+    pub fn resize(&mut self, new_len: usize, value: T) {
+        if new_len <= self.len() {
+            return;
+        }
+
+        let additional = new_len - self.len();
+        self.reserve(additional);
+
+        for _ in 0..additional - 1 {
+            let index = self._capacity;
+
+            unsafe {
+                self._buffer
+                    .offset(index as isize)
+                    .write(value.clone());
+            }
+
+            self._length = index + 1;
+        }
+
+        unsafe {
+            self._buffer
+                .offset(additional as isize)
+                .write(value);
+        }
+    }
+}
+
+impl<'allocator, T, A : KAllocator> Drop for KVec<'allocator, T, A> {
     fn drop(&mut self) {
         if std::mem::needs_drop::<T>() {
             for offset in 0 .. self._length {
@@ -318,7 +347,7 @@ impl<'a, T, A : KAllocator> Drop for KVec<'a, T, A> {
     }
 }
 
-impl<'a, T, A : KAllocator> Index<usize> for KVec<'a, T, A> {
+impl<'allocator, T, A : KAllocator> Index<usize> for KVec<'allocator, T, A> {
     type Output = T;
 
     fn index(&self, index: usize) -> &Self::Output {
@@ -326,13 +355,13 @@ impl<'a, T, A : KAllocator> Index<usize> for KVec<'a, T, A> {
     }
 }
 
-impl<'a, T, A : KAllocator> IndexMut<usize> for KVec<'a, T, A> {
+impl<'allocator, T, A : KAllocator> IndexMut<usize> for KVec<'allocator, T, A> {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         self.get_mut(index).unwrap()
     }
 }
 
-impl<'a, T, A : KAllocator> Debug for KVec<'a, T, A> {
+impl<'allocator, T, A : KAllocator> Debug for KVec<'allocator, T, A> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "KVec(")?;
         write!(f, "buffer: 0x{:p}, ", self._buffer.as_ptr())?;
@@ -343,7 +372,7 @@ impl<'a, T, A : KAllocator> Debug for KVec<'a, T, A> {
     }
 }
 
-impl<'a, T, A : KAllocator> Deref for KVec<'a, T, A> {
+impl<'allocator, T, A : KAllocator> Deref for KVec<'allocator, T, A> {
     type Target = [T];
 
     fn deref(&self) -> &Self::Target {
@@ -351,40 +380,40 @@ impl<'a, T, A : KAllocator> Deref for KVec<'a, T, A> {
     }
 }
 
-impl<'a, T, A : KAllocator> DerefMut for KVec<'a, T, A> {
+impl<'allocator, T, A : KAllocator> DerefMut for KVec<'allocator, T, A> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         return unsafe { core::slice::from_raw_parts_mut(self._buffer.as_ptr(), self._length) };
     }
 }
 
-impl<'a, T, A : KAllocator> AsRef<[T]> for KVec<'a, T, A> {
+impl<'allocator, T, A : KAllocator> AsRef<[T]> for KVec<'allocator, T, A> {
     fn as_ref(&self) -> &[T] {
         self
     }
 }
 
-impl<'a, T, A : KAllocator> AsMut<[T]> for KVec<'a, T, A> {
+impl<'allocator, T, A : KAllocator> AsMut<[T]> for KVec<'allocator, T, A> {
     fn as_mut(&mut self) -> &mut [T] {
         self
     }
 }
 
-impl<'a, T, A : KAllocator> IntoIterator for KVec<'a, T, A> {
+impl<'allocator, T, A : KAllocator> IntoIterator for KVec<'allocator, T, A> {
     type Item = T;
-    type IntoIter = KVecIterator<'a, T, A>;
+    type IntoIter = KVecIterator<'allocator, T, A>;
 
     fn into_iter(self) -> Self::IntoIter {
         return KVecIterator::new(self);
     }
 }
 
-pub struct KVecIterator<'a, T, A : KAllocator> {
-    _kvec: KVec<'a, T, A>,
+pub struct KVecIterator<'allocator, T, A : KAllocator> {
+    _kvec: KVec<'allocator, T, A>,
     _index: usize
 }
 
-impl<'a, T, A : KAllocator> KVecIterator<'a, T, A> {
-    pub fn new(kvec: KVec<'a, T, A>) -> Self {
+impl<'allocator, T, A : KAllocator> KVecIterator<'allocator, T, A> {
+    pub fn new(kvec: KVec<'allocator, T, A>) -> Self {
         return Self {
             _kvec: kvec,
             _index: 0
@@ -392,7 +421,7 @@ impl<'a, T, A : KAllocator> KVecIterator<'a, T, A> {
     }
 }
 
-impl<'a, T, A : KAllocator> Iterator for KVecIterator<'a, T, A> {
+impl<'allocator, T, A : KAllocator> Iterator for KVecIterator<'allocator, T, A> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -414,7 +443,7 @@ impl<'a, T, A : KAllocator> Iterator for KVecIterator<'a, T, A> {
     }
 }
 
-impl<'a, T : PartialEq, A : KAllocator> PartialEq for KVec<'a, T, A> {
+impl<'allocator, T : PartialEq, A : KAllocator> PartialEq for KVec<'allocator, T, A> {
     fn eq(&self, other: &Self) -> bool {
         if !self.len().eq(&other.len()) {
             return false;
@@ -435,7 +464,7 @@ impl<'a, T : PartialEq, A : KAllocator> PartialEq for KVec<'a, T, A> {
     }
 }
 
-impl<'a, T : PartialOrd, A : KAllocator> PartialOrd for KVec<'a, T, A> {
+impl<'allocator, T : PartialOrd, A : KAllocator> PartialOrd for KVec<'allocator, T, A> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         let Some(length_cmp) = self.len().partial_cmp(&other.len()) else {
             return None;
@@ -464,7 +493,7 @@ impl<'a, T : PartialOrd, A : KAllocator> PartialOrd for KVec<'a, T, A> {
     }
 }
 
-impl<'a, T : Clone, A : KAllocator> Clone for KVec<'a, T, A> {
+impl<'allocator, T : Clone, A : KAllocator> Clone for KVec<'allocator, T, A> {
     fn clone(&self) -> Self {
         let mut cloned = KVec::with_capacity(self._allocator, self._capacity);
         cloned.extend_from_slice(&self);
@@ -476,13 +505,13 @@ impl<'a, T : Clone, A : KAllocator> Clone for KVec<'a, T, A> {
 mod test {
     use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
 
-    use crate::alloc::global::GlobalAllocator;
+    use crate::alloc::kglobal_allocator::KGlobalAllocator;
     use super::KVec;
 
     #[test]
     fn test_kvec() {
-        let allocator = GlobalAllocator::new();
-        let mut kvec = KVec::<u64, GlobalAllocator>::new(&allocator);
+        let allocator = KGlobalAllocator::new();
+        let mut kvec = KVec::<u64, KGlobalAllocator>::new(&allocator);
 
         for i in 0..1024 {
             kvec.push(i);
@@ -505,7 +534,7 @@ mod test {
 
     #[test]
     fn test_kvec_deref() {
-        let allocator = GlobalAllocator::new();
+        let allocator = KGlobalAllocator::new();
 
         fn accepts_slice(slice: &[usize]) {
             let _ = slice;
@@ -515,7 +544,7 @@ mod test {
             let _ = slice_mut;
         }
 
-        let mut kvec = KVec::<usize, GlobalAllocator>::new(&allocator);
+        let mut kvec = KVec::<usize, KGlobalAllocator>::new(&allocator);
         kvec.push(11223344);
 
         accepts_slice(&kvec);
@@ -524,8 +553,8 @@ mod test {
 
     #[test]
     fn test_kvec_iter() {
-        let allocator = GlobalAllocator::new();
-        let mut kvec = KVec::<usize, GlobalAllocator>::new(&allocator);
+        let allocator = KGlobalAllocator::new();
+        let mut kvec = KVec::<usize, KGlobalAllocator>::new(&allocator);
         kvec.push(1);
         kvec.push(2);
         kvec.push(3);
@@ -545,8 +574,8 @@ mod test {
 
     #[test]
     fn test_kvec_into_iter() {
-        let allocator = GlobalAllocator::new();
-        let mut kvec = KVec::<usize, GlobalAllocator>::new(&allocator);
+        let allocator = KGlobalAllocator::new();
+        let mut kvec = KVec::<usize, KGlobalAllocator>::new(&allocator);
         kvec.push(1);
         kvec.push(2);
         kvec.push(3);
@@ -566,9 +595,9 @@ mod test {
 
     #[test]
     fn test_kvec_with_initial_capacity() {
-        let allocator = GlobalAllocator::new();
+        let allocator = KGlobalAllocator::new();
 
-        let mut kvec = KVec::<usize, GlobalAllocator>::with_capacity(&allocator, 4);
+        let mut kvec = KVec::<usize, KGlobalAllocator>::with_capacity(&allocator, 4);
         assert_eq!(4, kvec._capacity);
         assert_eq!(0, kvec._length);
         
@@ -595,8 +624,8 @@ mod test {
 
     #[test]
     fn test_kvec_with_0_initial_capacity() {
-        let allocator = GlobalAllocator::new();
-        let mut kvec = KVec::<usize, GlobalAllocator>::with_capacity(&allocator, 0);
+        let allocator = KGlobalAllocator::new();
+        let mut kvec = KVec::<usize, KGlobalAllocator>::with_capacity(&allocator, 0);
 
         kvec.push(1);
         kvec.push(1);
@@ -613,8 +642,8 @@ mod test {
 
     #[test]
     fn test_kvec_extend_from_slice() {
-        let allocator = GlobalAllocator::new();
-        let mut kvec = KVec::<usize, GlobalAllocator>::new(&allocator);
+        let allocator = KGlobalAllocator::new();
+        let mut kvec = KVec::<usize, KGlobalAllocator>::new(&allocator);
         assert_eq!(0, kvec._capacity);
         assert_eq!(0, kvec._length);
         
@@ -638,8 +667,8 @@ mod test {
 
     #[test]
     fn test_kvec_clone() {
-        let allocator = GlobalAllocator::new();
-        let mut kvec1 = KVec::<usize, GlobalAllocator>::new(&allocator);
+        let allocator = KGlobalAllocator::new();
+        let mut kvec1 = KVec::<usize, KGlobalAllocator>::new(&allocator);
 
         kvec1.push(1);
         kvec1.push(2);
@@ -657,7 +686,7 @@ mod test {
 
     #[test]
     fn test_kvec_drop_is_called() {
-        let allocator = GlobalAllocator::new();
+        let allocator = KGlobalAllocator::new();
         let dropflag = Arc::new(AtomicBool::new(false));
         struct MustBeDropped(Arc<AtomicBool>);
         
@@ -678,9 +707,37 @@ mod test {
     }
 
     #[test]
+    fn test_kvec_drop_is_called_on_popped_element() {
+        let allocator = KGlobalAllocator::new();
+        let dropflag = Arc::new(AtomicBool::new(false));
+        struct MustBeDropped(Arc<AtomicBool>);
+
+        impl Drop for MustBeDropped {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::Relaxed);
+            }
+        }
+
+        let mut kvec = KVec::new(&allocator);
+
+        {
+            let dropflag = Arc::clone(&dropflag);
+            kvec.push(MustBeDropped(dropflag));
+        }
+
+        {
+            let _ = kvec.pop().unwrap();
+        }
+
+        assert_eq!(true, dropflag.load(Ordering::Relaxed));
+        assert!(kvec.is_empty());
+    }
+
+
+    #[test]
     fn test_kvec_remove_start() {
-        let allocator = GlobalAllocator::new();
-        let mut kvec = KVec::<usize, GlobalAllocator>::new(&allocator);
+        let allocator = KGlobalAllocator::new();
+        let mut kvec = KVec::<usize, KGlobalAllocator>::new(&allocator);
 
         kvec.push(1);
         kvec.push(2);
@@ -699,8 +756,8 @@ mod test {
 
     #[test]
     fn test_kvec_remove_end() {
-        let allocator = GlobalAllocator::new();
-        let mut kvec = KVec::<usize, GlobalAllocator>::new(&allocator);
+        let allocator = KGlobalAllocator::new();
+        let mut kvec = KVec::<usize, KGlobalAllocator>::new(&allocator);
 
         kvec.push(1);
         kvec.push(2);
@@ -719,8 +776,8 @@ mod test {
 
     #[test]
     fn test_kvec_swap() {
-        let allocator = GlobalAllocator::new();
-        let mut kvec = KVec::<usize, GlobalAllocator>::new(&allocator);
+        let allocator = KGlobalAllocator::new();
+        let mut kvec = KVec::<usize, KGlobalAllocator>::new(&allocator);
 
         kvec.push(1);
         kvec.push(2);
