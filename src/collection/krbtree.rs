@@ -1125,6 +1125,7 @@ mod test {
         }
     }
 
+    #[cfg(not(miri))]
     #[test]
     fn test_krbtree_insert_get() {
         let allocator = KGlobalAllocator::new();

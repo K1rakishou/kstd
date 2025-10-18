@@ -2,6 +2,7 @@ use core::fmt::{Debug, Formatter};
 use core::ptr::NonNull;
 use core::alloc::Layout;
 use crate::alloc::kallocator::KAllocator;
+use crate::collection::layout_from_capacity;
 
 pub struct KRingBuffer<'allocator, T, A : KAllocator> {
     _allocator: &'allocator A,
@@ -154,6 +155,27 @@ impl<'allocator, T, A : KAllocator> KRingBuffer<'allocator, T, A> {
         }
 
         unsafe { self._buffer.as_ptr().offset(index as isize).write(value) };
+    }
+}
+
+impl<'allocator, T, A : KAllocator> Drop for KRingBuffer<'allocator, T, A> {
+    fn drop(&mut self) {
+        if std::mem::needs_drop::<T>() {
+            for offset in 0 .. self._capacity {
+                unsafe {
+                    let element_ptr = self._buffer.add(offset).as_ptr();
+                    core::ptr::drop_in_place(element_ptr);
+                }
+            }
+        }
+
+        if self._capacity > 0 {
+            let layout = layout_from_capacity::<T>(self._capacity);
+            self._allocator.deallocate(self._buffer.as_ptr() as *mut u8, layout);
+        }
+
+        self._length = 0;
+        self._capacity = 0;
     }
 }
 
